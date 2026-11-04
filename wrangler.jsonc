@@ -21,11 +21,15 @@
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": ["TaskLedger"]
+      "new_sqlite_classes": [
+        "TaskLedger"
+      ]
     },
     {
       "tag": "v2",
-      "new_sqlite_classes": ["MissionState"]
+      "new_sqlite_classes": [
+        "MissionState"
+      ]
     }
   ],
   "queues": {
@@ -49,5 +53,10 @@
       "binding": "INVESTIGATION_WORKFLOW",
       "class_name": "InvestigationWorkflow"
     }
-  ]
+  ],
+  "triggers": {
+    "crons": [
+      "0 * * * *"
+    ]
+  }
 }
