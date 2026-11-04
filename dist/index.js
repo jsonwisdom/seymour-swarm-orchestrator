@@ -64,7 +64,7 @@ __name(listUnfinished, "listUnfinished");
 var AUTO_PROBE_ID = "seymour-scheduled-storage-proof-v1";
 var MARKER = "seymour-cron-storage-proof";
 var HISTORY = "seymour-previous-probe-v1";
-async function runAutomatedPersistenceProbe(env, now = Date.now()) {
+async function runAutomatedPersistenceProbe(env, now = Date.now(), source = "operator") {
   const at = new Date(now).toISOString();
   if (!env.MISSION_STATE) return {
     schema: "SEYMOUR_AUTOMATED_PERSISTENCE_V1",
@@ -116,7 +116,7 @@ async function runAutomatedPersistenceProbe(env, now = Date.now()) {
       missionId: HISTORY,
       status: "DELIVERED",
       lastStep: "cron-result",
-      payload: { runId, marker: MARKER, revision: progress.revision, timestamp: now },
+      payload: { runId, marker: MARKER, revision: progress.revision, timestamp: now, source, result },
       timestamp: now,
       note: result === "PASS" ? "PASS: prior scheduled run survived and current read/write checked" : "HOLD: current read/write checked, previous-run proof pending or failed"
     });
@@ -159,7 +159,7 @@ async function readLiveRecoveryStatus(env, now = Date.now()) {
   const l = latestRun?.payload;
   const ageMs = typeof p?.timestamp === "number" && p.timestamp <= now ? now - p.timestamp : null;
   const validReceipt = !!(latestRun && priorReceipt && latestRun.status === "DELIVERED" && priorReceipt.status === "DELIVERED" && p?.runId && p.runId === l?.runId && p.revision === latestRun.revision && p.marker === "seymour-cron-storage-proof");
-  const verdict = !validReceipt ? "UNKNOWN" : ageMs !== null && ageMs > STALE_AFTER_MS ? "STALE" : "BASELINE_ONLY";
+  const verdict = !validReceipt ? "UNKNOWN" : ageMs !== null && ageMs > STALE_AFTER_MS ? "STALE" : p?.result === "PASS" ? "PASS" : p?.result === "FAIL" ? "FAIL" : "BASELINE_ONLY";
   const otherUnfinished = unfinished.filter((x) => !x.missionId.startsWith("seymour-proof-") && x.missionId !== AUTO_PROBE_ID && x.missionId !== HISTORY_ID);
   return {
     schema: "SEYMOUR_LIVE_STATUS_V1",
@@ -171,7 +171,9 @@ async function readLiveRecoveryStatus(env, now = Date.now()) {
       lastRecordedAt: typeof p?.timestamp === "number" ? new Date(p.timestamp).toISOString() : null,
       ageMinutes: ageMs === null ? null : Math.floor(ageMs / 6e4),
       latestRevision: latestRun?.revision ?? null,
-      note: validReceipt ? "Durable receipts agree. Cross-run PASS requires a persisted explicit verified result from two distinct executions." : "No mutually consistent durable probe receipts observed."
+      runSource: p?.source ?? "UNKNOWN",
+      scheduledCrossRunPass: validReceipt && p?.source === "scheduled" && p?.result === "PASS",
+      note: validReceipt ? "Durable receipts agree. Displayed verdict is from the recorded run; runSource identifies whether it was a cron or operator test." : "No mutually consistent durable probe receipts observed."
     },
     scheduled: { cron: "17 10 * * *", timezone: "UTC", verification: "Configured; runtime delivery not inferred from schedule" },
     recovery: {
@@ -238,7 +240,7 @@ const render = data => {
   byId("age").textContent=data.persistence.ageMinutes===null?"No production receipt":data.persistence.ageMinutes+" minutes since recorded receipt";
   byId("revision").textContent=data.persistence.latestRevision??"\u2014";
   byId("unfinished").textContent=data.recovery.unfinishedCount;
-  byId("last").textContent=data.persistence.note;
+  byId("last").textContent=data.persistence.note + " Source: " + data.persistence.runSource;
   byId("missions").replaceChildren(...(data.recovery.sample.length ? data.recovery.sample.map(m=>{
     const box=document.createElement("div");box.className="mission";
     const name=document.createElement("b");name.textContent=m.missionId;
@@ -1002,7 +1004,7 @@ var index_default = {
   },
   async scheduled(_controller, env, ctx) {
     ctx.waitUntil((async () => {
-      const result = await runAutomatedPersistenceProbe(env);
+      const result = await runAutomatedPersistenceProbe(env, Date.now(), "scheduled");
       console.log(JSON.stringify({
         event: "SEYMOUR_AUTOMATED_PERSISTENCE_V1",
         result: result.result,
