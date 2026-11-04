@@ -8,7 +8,7 @@ export const AUTO_PROBE_ID = "seymour-scheduled-storage-proof-v1";
 const MARKER = "seymour-cron-storage-proof";
 const HISTORY = "seymour-previous-probe-v1";
 
-type PreviousProbe = { runId: string; marker: string; revision: number; timestamp: number };
+type PreviousProbe = { runId: string; marker: string; revision: number; timestamp: number; source?: "scheduled" | "operator"; result?: "PASS" | "FAIL" };
 
 export interface AutoProbeResult {
   schema: "SEYMOUR_AUTOMATED_PERSISTENCE_V1";
@@ -26,7 +26,7 @@ export interface AutoProbeResult {
  * verify durable storage. The fixed mission ID avoids unbounded row growth.
  * A clean first run is FAIL-closed as prior run is not yet proven.
  */
-export async function runAutomatedPersistenceProbe(env: Env, now = Date.now()): Promise<AutoProbeResult> {
+export async function runAutomatedPersistenceProbe(env: Env, now = Date.now(), source: "scheduled" | "operator" = "operator"): Promise<AutoProbeResult> {
   const at = new Date(now).toISOString();
   if (!env.MISSION_STATE) return {
     schema:"SEYMOUR_AUTOMATED_PERSISTENCE_V1",result:"FAIL",at,
@@ -69,7 +69,7 @@ export async function runAutomatedPersistenceProbe(env: Env, now = Date.now()): 
     const result = priorRunVerified ? "PASS" : "FAIL";
     await saveCheckpoint(env,{
       missionId:HISTORY,status:"DELIVERED",lastStep:"cron-result",
-      payload:{runId,marker:MARKER,revision:progress.revision,timestamp:now},
+      payload:{runId,marker:MARKER,revision:progress.revision,timestamp:now,source,result},
       timestamp:now,note:result === "PASS" ?
         "PASS: prior scheduled run survived and current read/write checked" :
         "HOLD: current read/write checked, previous-run proof pending or failed"
