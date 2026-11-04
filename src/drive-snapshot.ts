@@ -1,7 +1,8 @@
 /**
- * Drive snapshot — refreshed 2026-11-04T10:32:00Z
+ * Drive snapshot — refreshed 2026-11-04T10:41:00Z
  * Committed metadata and short excerpts. Not a live Drive API connection.
- * Includes original 13 Seymour documents plus recovery indexes and lineage pointers.
+ * Includes Seymour documents, recovery indexes, lineage, and the Citizen Root
+ * Minnesota Classes with Glasses recovery pointer. Student records withheld.
  * Live service-account path remains a separate upgrade.
  */
 export interface DrivePointer {
@@ -13,9 +14,9 @@ export interface DrivePointer {
   excerpt: string;
 }
 
-export const DRIVE_SNAPSHOT_DATE = "2026-11-04T10:32:00Z";
-export const DRIVE_SNAPSHOT_DELTA = "RECOVERY_INDEXES_ADDED";
-export const DRIVE_SNAPSHOT_COUNT = 21;
+export const DRIVE_SNAPSHOT_DATE = "2026-11-04T10:41:00Z";
+export const DRIVE_SNAPSHOT_DELTA = "CITIZEN_ROOT_LEARNING_POINTER_ADDED";
+export const DRIVE_SNAPSHOT_COUNT = 22;
 
 export const DRIVE_POINTERS: DrivePointer[] = [
   {
@@ -185,5 +186,13 @@ export const DRIVE_POINTERS: DrivePointer[] = [
     href: "https://docs.google.com/document/d/1aTmUgkwKuR8NsXCxH-6417QsUnVSyA7dA_6T830MXRo",
     status: "LINEAGE",
     excerpt: "ChatGPT conversation lineage for Master Room."
+  },
+  {
+    id: "citizen-root-minnesota-recovery-v1",
+    title: "Operation Computer Wisdom Minnesota — Classes with Glasses Recovery",
+    modified: "2026-11-04T10:40:10Z",
+    href: "https://github.com/jsonwisdom/CITIZEN_ROOT/blob/652742579e236b7ddf22e540cfdb73eb306e83b6/registry/OPERATION_COMPUTER_WISDOM_MINNESOTA_CLASSES_WITH_GLASSES_RECOVERY_V1.json",
+    status: "LEARNING_POINTER",
+    excerpt: "Public recovery manifest. 7 verified learning pages in COMPUTERWISDOM. Student records withheld. Authority false. Merkle root pending."
   }
 ];
