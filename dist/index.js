@@ -385,6 +385,17 @@ __name(listUnfinished, "listUnfinished");
 var DEFAULT_LOGICAL_TASKS = 73e3;
 var TASKS_PER_BATCH = 270;
 var AGENT_TYPES = ["source", "audit", "math", "legal", "replay", "receipt"];
+function isAllowlisted(email, allowlist) {
+  if (!email || !allowlist) return false;
+  const allowed = allowlist.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  return allowed.includes(email.toLowerCase());
+}
+__name(isAllowlisted, "isAllowlisted");
+function hasRoutePermission(pathname, email, allowlist) {
+  if (!isAllowlisted(email, allowlist)) return false;
+  return true;
+}
+__name(hasRoutePermission, "hasRoutePermission");
 var index_default = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -392,8 +403,24 @@ var index_default = {
       return Response.json({ service: "seymour-swarm-orchestrator", status: "UP", verified: "transport-only", version: "0.4" });
     }
     const isPublic = url.pathname === "/comms/who" && request.method === "GET" || url.pathname === "/simulator/status" && request.method === "GET";
-    if (!isPublic && (!env.CONTROL_DESK_TOKEN || request.headers.get("Authorization") !== "Bearer " + env.CONTROL_DESK_TOKEN)) {
-      return Response.json({ error: "AUTH_REQUIRED", note: "Authenticated private gateway required." }, { status: 401 });
+    if (!isPublic) {
+      const hasAccess = !!ctx.access;
+      const hasBearer = !!(env.CONTROL_DESK_TOKEN && request.headers.get("Authorization") === "Bearer " + env.CONTROL_DESK_TOKEN);
+      if (!hasAccess && !hasBearer) {
+        return Response.json(
+          { error: "AUTH_REQUIRED", note: "Cloudflare Access or authenticated private gateway required." },
+          { status: 401 }
+        );
+      }
+      if (hasAccess && ctx.access) {
+        const email = ctx.access.userEmail;
+        if (!hasRoutePermission(url.pathname, email, env.ACCESS_ALLOWLIST)) {
+          return Response.json(
+            { error: "FORBIDDEN", note: "Identity not authorized for this operation." },
+            { status: 403 }
+          );
+        }
+      }
     }
     if (url.pathname === "/comms/who" && request.method === "GET") {
       return Response.json(COMMS_DIRECTORY);
@@ -522,7 +549,7 @@ var index_default = {
           uniqueTasksCreated: created.length,
           estimatedQueueOps: estimatedOps,
           freeTierOpsRemainingEstimate: Math.max(0, freeTierOpsPerDay - estimatedOps),
-          note: "Conceptual batching. Actual execution respects CPU, subrequest, storage, and queue limits. ~3 ops per message. Workflow steps counted separately (free tier: 3,000/day)."
+          note: "Conceptual batching. Actual execution respects CPU, subrequest, storage, and queue limits. ~3 ops per message. Workflow steps counted separately (free tier: 3,000/day). Simulator outcomes are not evidence of real agent research."
         },
         note: "No Cloudflare billing upgrade or deployment performed. Read-only by default. Humans retain publication/legal authority."
       });
@@ -574,7 +601,7 @@ var index_default = {
       const outcome = "UNKNOWN";
       await stub.updateOutcome(taskId, outcome, {
         simulated: true,
-        note: "Replace with real agent logic. Bounded batch execution.",
+        note: "Simulator outcome. Not evidence of real agent execution.",
         processedInBatch: true
       });
       msg.ack();
