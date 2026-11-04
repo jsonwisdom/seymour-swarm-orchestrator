@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import type { Env } from "./index";
 import type { MissionCheckpoint } from "./recovery";
 
 const VALID = new Set(["STARTED", "IN_PROGRESS", "DELIVERED", "HOLD", "FAILED"]);
