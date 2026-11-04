@@ -1,4 +1,4 @@
-# SEYMOUR SWARM ORCHESTRATOR v0.2
+# SEYMOUR SWARM ORCHESTRATOR v0.3 — Event-Driven Workflows
 
 One request → thousands of logical tasks → distributed execution → one verifiable answer.
 
@@ -13,7 +13,7 @@ Isolated Cloudflare Worker backed by a durable task ledger (Durable Object + SQL
 - Duplicate research reused. Failed tasks retry. Missing evidence stays UNKNOWN.
 - Bounded batches. Spending capped at $0. Operations read-only by default.
 - Humans retain publication and legal decision authority.
-- **Workflows**: Durable multi-step monitoring for long-running investigations (sleep, check progress, reconcile).
+- **Workflows**: Durable multi-step monitoring for long-running investigations (waitForEvent, queue-completion notifications, timeout reconciliation).
 
 ## Fan-out Simulator (Expanded)
 
@@ -29,6 +29,17 @@ Returns simulator math:
 - estimatedQueueOps (≈ 3× messages)
 - freeTierOpsRemainingEstimate
 - workflowInstanceId (when useWorkflow=true)
+
+## Event-driven completion (v0.3)
+
+- Queue consumer settles tasks in the TaskLedger and emits a `tasks-settled` event to Workflow `inv-{requestId}` when ledger pending count reaches zero.
+- Workflow uses `step.waitForEvent("wait-for-tasks-settled", {type:"tasks-settled", timeout:"10 minutes"})` rather than fixed sleeps; initial ledger check handles fast completions.
+- Event is a **hint only**: workflow always reconciles durable ledger before claiming `COMPLETE`; timeout produces `PARTIAL` if pending remains.
+- Simulated tasks settle as **UNKNOWN**, never fabricated PASS.
+- Live (non-dryRun) calls are rejected if `logicalTaskCount > 3000`, leaving theoretical Queue headroom; shared account usage and retries remain unverified.
+- Use `{"question":"test","logicalTaskCount":10,"useWorkflow":true}` for a small local integration run.
+- Default 73,000-task simulation requires `dryRun:true`, and even dry-run ledger writes can be expensive: further optimize before large tests.
+- No public event-injection endpoint is exposed. A future authenticated interface must validate identity and authorization.
 
 GET `/simulator/status` returns defaults and free-tier notes.  
 GET `/workflow/{instanceId}` returns Workflow status.
