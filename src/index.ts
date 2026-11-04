@@ -27,6 +27,17 @@ export default {
       const requestId = body.requestId || crypto.randomUUID();
       const logicalCount = Math.min(body.logicalTaskCount ?? DEFAULT_LOGICAL_TASKS, 100000); // hard cap for safety
       const dryRun = body.dryRun === true;
+      // Guard Queue Free quota conservatively: 3 operations/message, and
+      // reserve headroom for retries/other account usage.
+      // 73k logical tasks remain simulator-only without a paid-capacity plan.
+      if (!dryRun && logicalCount > 3000) {
+        return Response.json({
+          error: "FREE_TIER_EXECUTION_GUARD",
+          message: "Live execution capped at 3,000 tasks/request (~9,000 Queue operations). Use dryRun:true for the 73,000-task simulator.",
+          logicalTasks: logicalCount,
+          note: "This is a design guard, not a verified account-level quota check."
+        }, { status: 422 });
+      }
       const useWorkflow = body.useWorkflow === true;
       const stub = env.TASK_LEDGER.getByName(requestId);
 
@@ -76,6 +87,18 @@ export default {
       }
       if (currentBatch.length > 0) batches.push(currentBatch);
 
+      // Start monitor BEFORE enqueue to reduce completion-signal races.
+      // If the signal still precedes waitForEvent, the Workflow checks
+      // the ledger first and has a bounded timeout reconciliation.
+      let workflowInstanceId: string | undefined;
+      if (useWorkflow && !dryRun) {
+        const instance = await env.INVESTIGATION_WORKFLOW.create({
+          id: `inv-${requestId}`,
+          params: { requestId, question: body.question, logicalTaskCount: logicalCount },
+        });
+        workflowInstanceId = instance.id;
+      }
+
       // Enqueue using sendBatch for efficiency (max 100 messages per sendBatch call)
       if (!dryRun) {
         for (const batch of batches) {
@@ -85,15 +108,6 @@ export default {
             await env.TASK_QUEUE.sendBatch(sub.map(msg => ({ body: msg })));
           }
         }
-      }
-
-      let workflowInstanceId: string | undefined;
-      if (useWorkflow && !dryRun) {
-        const instance = await env.INVESTIGATION_WORKFLOW.create({
-          id: `inv-${requestId}`,
-          params: { requestId, question: body.question, logicalTaskCount: logicalCount },
-        });
-        workflowInstanceId = instance.id;
       }
 
       const requiredBatches = Math.ceil(logicalCount / TASKS_PER_BATCH);
@@ -145,7 +159,7 @@ export default {
 
     if (url.pathname === "/simulator/status") {
       return Response.json({
-        version: "0.2-workflows",
+        version: "0.3-event-driven",
         defaults: {
           logicalTasks: DEFAULT_LOGICAL_TASKS,
           tasksPerBatch: TASKS_PER_BATCH,
@@ -165,13 +179,14 @@ export default {
   },
 
   async queue(batch: MessageBatch, env: Env): Promise<void> {
+    const touched = new Set<string>();
     for (const msg of batch.messages) {
       const { taskId, requestId, type, query } = msg.body as any;
       const stub = env.TASK_LEDGER.getByName(requestId);
 
       // Simulate agent execution (in real: call source agents, etc.)
       // For free tier / starter: mark as UNKNOWN or mock PASS
-      const outcome = Math.random() > 0.2 ? "PASS" : "UNKNOWN";
+      const outcome = "UNKNOWN"; // Simulation is never evidence of a PASS
       await stub.updateOutcome(taskId, outcome as any, { 
         simulated: true, 
         note: "Replace with real agent logic. Bounded batch execution.",
@@ -179,6 +194,27 @@ export default {
       });
 
       msg.ack();
+      touched.add(requestId);
+    }
+    // Signals are sent only when ALL ledger tasks have settled.
+    // At-least-once Queue delivery may duplicate a signal, so the
+    // Workflow always re-reads the ledger after receiving an event.
+    for (const requestId of touched) {
+      const stub = env.TASK_LEDGER.getByName(requestId);
+      const stats = await stub.getProgressSummary(requestId);
+      if (stats.total > 0 && stats.pending === 0) {
+        try {
+          const instance = await env.INVESTIGATION_WORKFLOW.get(`inv-${requestId}`);
+          await instance.sendEvent({
+            type: "tasks-settled",
+            payload: { requestId, source: "task-queue", kind: "tasks-settled" },
+          });
+        } catch {
+          // No Workflow requested, already finished, or transient failure.
+          // Do not retry settled task work to redeliver a hint; Workflow
+          // timeout reconciliation remains the recovery path.
+        }
+      }
     }
   },
 } satisfies ExportedHandler<Env>;
