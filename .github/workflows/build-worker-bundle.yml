@@ -9,7 +9,7 @@ on:
       - '.github/workflows/build-worker-bundle.yml'
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   bundle:
     runs-on: ubuntu-latest
@@ -29,3 +29,12 @@ jobs:
           name: seymour-worker-bundle
           path: dist/
           if-no-files-found: error
+      - name: Publish compiled Worker source for reviewed upload
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f dist/index.js
+          if ! git diff --cached --quiet; then
+            git commit -m "build: store validated Worker module"
+            git push origin HEAD:main
+          fi
