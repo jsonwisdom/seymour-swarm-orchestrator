@@ -14,7 +14,7 @@ export async function readLiveRecoveryStatus(env: Env, now = Date.now()) {
   ]);
   const latestRun = latest as RecordShape | null;
   const priorReceipt = history as RecordShape | null;
-  const p = priorReceipt?.payload as { runId?:string;revision?:number;timestamp?:number;marker?:string } | undefined;
+  const p = priorReceipt?.payload as { runId?:string;revision?:number;timestamp?:number;marker?:string; result?: "PASS" | "FAIL"; source?: "operator" | "scheduled" } | undefined;
   const l = latestRun?.payload as { runId?:string;marker?:string } | undefined;
   const ageMs = typeof p?.timestamp === "number" && p.timestamp <= now ? now-p.timestamp : null;
   const validReceipt = !!(latestRun && priorReceipt &&
@@ -23,8 +23,10 @@ export async function readLiveRecoveryStatus(env: Env, now = Date.now()) {
     p.revision === latestRun.revision &&
     p.marker === "seymour-cron-storage-proof");
   // Last recorded run's state alone cannot prove a previous run survived.
-  const verdict: "UNKNOWN"|"STALE"|"BASELINE_ONLY" = !validReceipt ? "UNKNOWN" :
-    ageMs !== null && ageMs > STALE_AFTER_MS ? "STALE" : "BASELINE_ONLY";
+  const verdict: "UNKNOWN"|"STALE"|"BASELINE_ONLY"|"PASS"|"FAIL" = !validReceipt ? "UNKNOWN" :
+    ageMs !== null && ageMs > STALE_AFTER_MS ? "STALE" :
+    p?.result === "PASS" ? "PASS" :
+    p?.result === "FAIL" ? "FAIL" : "BASELINE_ONLY";
   const otherUnfinished = unfinished.filter(x=> !x.missionId.startsWith("seymour-proof-") &&
     x.missionId !== AUTO_PROBE_ID && x.missionId !== HISTORY_ID);
   return {
@@ -35,8 +37,10 @@ export async function readLiveRecoveryStatus(env: Env, now = Date.now()) {
       lastRecordedAt:typeof p?.timestamp === "number" ? new Date(p.timestamp).toISOString():null,
       ageMinutes:ageMs===null?null:Math.floor(ageMs/60000),
       latestRevision:latestRun?.revision??null,
+      runSource:p?.source??"UNKNOWN",
+      scheduledCrossRunPass:validReceipt && p?.source==="scheduled" && p?.result==="PASS",
       note:validReceipt ?
-        "Durable receipts agree. Cross-run PASS requires a persisted explicit verified result from two distinct executions." :
+        "Durable receipts agree. Displayed verdict is from the recorded run; runSource identifies whether it was a cron or operator test." :
         "No mutually consistent durable probe receipts observed."},
     scheduled:{cron:"17 10 * * *",timezone:"UTC",verification:"Configured; runtime delivery not inferred from schedule"},
     recovery:{unfinishedCount:otherUnfinished.length,
@@ -99,7 +103,7 @@ const render = data => {
   byId("age").textContent=data.persistence.ageMinutes===null?"No production receipt":data.persistence.ageMinutes+" minutes since recorded receipt";
   byId("revision").textContent=data.persistence.latestRevision??"—";
   byId("unfinished").textContent=data.recovery.unfinishedCount;
-  byId("last").textContent=data.persistence.note;
+  byId("last").textContent=data.persistence.note + " Source: " + data.persistence.runSource;
   byId("missions").replaceChildren(...(data.recovery.sample.length ? data.recovery.sample.map(m=>{
     const box=document.createElement("div");box.className="mission";
     const name=document.createElement("b");name.textContent=m.missionId;
