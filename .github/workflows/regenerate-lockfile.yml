@@ -1,0 +1,45 @@
+name: Regenerate npm lockfile
+on:
+  push:
+    paths:
+      - '.github/workflows/regenerate-lockfile.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Upgrade npm to 11
+        run: npm install -g npm@11
+      - name: Regenerate lockfile against npm registry
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only --no-audit --no-fund
+          node -e "const l=require('./package-lock.json'); if(!l.packages || !l.packages['']) process.exit(1); console.log('lockfileVersion',l.lockfileVersion,'dependencies',Object.keys(l.packages).length)"
+      - name: Preserve generated lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: seymour-package-lock
+          path: package-lock.json
+          if-no-files-found: error
+      - name: Verify dependency install
+        run: npm ci --no-audit --no-fund
+      - name: Commit lockfile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo "Lockfile already current"
+          else
+            git commit -m "build: generate npm 11 package-lock.json"
+            git push origin HEAD:main
+          fi
