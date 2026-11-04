@@ -1,3 +1,4 @@
+import { MissionState } from "./mission-state";
 import { TaskLedger, Task } from "./task-ledger";
 import { InvestigationWorkflow } from "./investigation-workflow";
 import { handleControlDesk } from "./control-desk";
@@ -10,7 +11,8 @@ export interface Env {
   INVESTIGATION_WORKFLOW: Workflow;
   // Optional bus bindings (declare in wrangler when ready)
   BUS_QUEUE?: Queue;
-  MISSION_STATE?: DurableObjectNamespace;
+  MISSION_STATE?: DurableObjectNamespace<MissionState>;
+  CONTROL_DESK_TOKEN?: string;
 }
 
 // Illustrative fan-out simulator constants from SEYMOUR SWARM v0.2
@@ -21,6 +23,12 @@ const AGENT_TYPES = ["source", "audit", "math", "legal", "replay", "receipt"] as
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    // Recovery and shared state are private; an unset token disables them.
+    if (url.pathname.startsWith("/recovery/") || url.pathname === "/bus/state") {
+      if (!env.CONTROL_DESK_TOKEN || request.headers.get("Authorization") !== "Bearer " + env.CONTROL_DESK_TOKEN) {
+        return Response.json({error:"AUTH_REQUIRED", note:"Configure CONTROL_DESK_TOKEN before use."}, {status:401});
+      }
+    }
 
     if (url.pathname === "/control-desk" && request.method === "POST") {
       return handleControlDesk(request);
@@ -49,8 +57,12 @@ export default {
 
     if (url.pathname === "/recovery/save" && request.method === "POST") {
       const body = await request.json() as MissionCheckpoint;
-      const result = await saveCheckpoint(env, body);
-      return Response.json(result);
+      try {
+        const result = await saveCheckpoint(env, body);
+        return Response.json(result, {status: result.saved ? 200 : 503});
+      } catch (e) {
+        return Response.json({error: e instanceof Error ? e.message : "SAVE_FAILED"}, {status:400});
+      }
     }
 
     if (url.pathname.startsWith("/recovery/load/") && request.method === "GET") {
@@ -273,4 +285,4 @@ async function hashStr(s: string): Promise<string> {
   return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-export { TaskLedger, InvestigationWorkflow };
+export { TaskLedger, InvestigationWorkflow, MissionState };
