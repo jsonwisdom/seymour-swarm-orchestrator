@@ -210,6 +210,12 @@ var LIVE_DESK_HTML = `<!doctype html>
 <section><h2>Resume work</h2><p>Most recent unfinished real mission records:</p><div id="missions" class="missions">Loading\u2026</div>
 <p class="hint">Records are pointers, not proof that external projects were synchronized.</p></section>
 </div>
+<section class="wheel">
+<h2>CWaaS \xB7 Wheel of Wisdom</h2>
+<p>Evidence first. The project index includes Flywheel repository provenance, JASON audit stages, x402 settlement boundaries, and coverage math.</p>
+<a class="wheel-link" href="/recovery/index">Open full project index \xB7 JSON evidence</a>
+<p class="hint">Runtime Drive sync and payments are not implied by a repository or snapshot.</p>
+</section>
 <h2>Evidence receipt</h2><pre id="receipt" role="status" aria-live="polite">Loading verified state\u2026</pre>
 <footer>PASS means a verified operation. UNKNOWN means there is not enough evidence. A schedule alone does not prove execution.</footer>
 </main></body></html>`;
@@ -229,7 +235,7 @@ button+button{background:transparent;color:#80eed6}button:disabled{opacity:.5;cu
 .missions{display:grid;gap:8px}.mission{border:1px solid #2e4559;border-radius:10px;padding:9px;overflow-wrap:anywhere;font-size:12px}
 .mission b{display:block;font-size:13px}.mission span{color:#9aafc0}
 pre{border:1px solid #31495d;background:#040c14;padding:20px;border-radius:15px;white-space:pre-wrap;overflow-wrap:anywhere;color:#b4eee0;font-size:12px}
-footer{color:#8ea6ba;font-size:12px;margin:26px 0 0}
+.wheel{margin-top:16px;border:1px solid #4d837a;border-radius:18px;background:#0d2b31;padding:22px}.wheel-link{display:inline-block;color:#071f24;background:#71e4ca;text-decoration:none;font-weight:800;padding:12px 16px;border-radius:10px}.wheel-link:focus-visible{outline:3px solid #fff}footer{color:#8ea6ba;font-size:12px;margin:26px 0 0}
 @media(max-width:680px){.metrics,.panels{grid-template-columns:1fr}.metrics{gap:9px}.metrics section{padding:16px}}
 `;
 var LIVE_DESK_JS = `
