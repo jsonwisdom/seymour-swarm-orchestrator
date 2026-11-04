@@ -1,4 +1,5 @@
 import { COMMS_DIRECTORY } from "./comms-directory";
+import { RECOVERY_OPERATOR_HTML, RECOVERY_OPERATOR_JS, RECOVERY_OPERATOR_CSS, RECOVERY_OPERATOR_HEADERS } from "./recovery-operator";
 import { MissionState } from "./mission-state";
 import { TaskLedger, Task } from "./task-ledger";
 import { InvestigationWorkflow } from "./investigation-workflow";
@@ -41,6 +42,9 @@ export function hasRoutePermission(
   const recovery =
     pathname === "/recovery/save" ||
     pathname === "/recovery/unfinished" ||
+    pathname === "/recovery/operator" ||
+    pathname === "/recovery/operator.js" ||
+    pathname === "/recovery/operator.css" ||
     pathname.startsWith("/recovery/load/");
   if (recovery) return true;
   const orchestration =
@@ -99,6 +103,24 @@ export default {
           );
         }
       }
+    }
+
+    // Operator console is behind Cloudflare Access AND the recovery allowlist.
+    // It never receives, reads, or renders a PIN, cookie, bearer token, or Access JWT.
+    if (request.method === "GET" && url.pathname === "/recovery/operator") {
+      return new Response(RECOVERY_OPERATOR_HTML, {headers:RECOVERY_OPERATOR_HEADERS});
+    }
+    if (request.method === "GET" && url.pathname === "/recovery/operator.js") {
+      return new Response(RECOVERY_OPERATOR_JS, {headers:{
+        "Content-Type":"text/javascript; charset=utf-8","Cache-Control":"no-store, private",
+        "X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer"
+      }});
+    }
+    if (request.method === "GET" && url.pathname === "/recovery/operator.css") {
+      return new Response(RECOVERY_OPERATOR_CSS, {headers:{
+        "Content-Type":"text/css; charset=utf-8","Cache-Control":"no-store, private",
+        "X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer"
+      }});
     }
 
     if (url.pathname === "/comms/who" && request.method === "GET") {
