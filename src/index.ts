@@ -1,11 +1,15 @@
 import { TaskLedger, Task } from "./task-ledger";
 import { InvestigationWorkflow } from "./investigation-workflow";
 import { handleControlDesk } from "./control-desk";
+import { enqueueAsync, sendDirect, updateSharedState } from "./message-bus";
 
 export interface Env {
   TASK_LEDGER: DurableObjectNamespace<TaskLedger>;
   TASK_QUEUE: Queue;
   INVESTIGATION_WORKFLOW: Workflow;
+  // Optional bus bindings (declare in wrangler when ready)
+  BUS_QUEUE?: Queue;
+  MISSION_STATE?: DurableObjectNamespace;
 }
 
 // Illustrative fan-out simulator constants from SEYMOUR SWARM v0.2
@@ -19,6 +23,27 @@ export default {
 
     if (url.pathname === "/control-desk" && request.method === "POST") {
       return handleControlDesk(request);
+    }
+
+    if (url.pathname === "/bus/enqueue" && request.method === "POST") {
+      const body = await request.json() as any;
+      const result = await enqueueAsync(env, {
+        from: body.from || "control-desk",
+        to: body.to || "unknown",
+        type: "async",
+        payload: body.payload,
+      });
+      return Response.json(result);
+    }
+
+    if (url.pathname === "/bus/direct" && request.method === "POST") {
+      const body = await request.json() as any;
+      return sendDirect(env, body.toBinding || "EXAMPLE_AGENT", body.payload);
+    }
+
+    if (url.pathname === "/bus/state" && request.method === "POST") {
+      const body = await request.json() as any;
+      return updateSharedState(env, body.key || "default", body.value);
     }
 
     if (url.pathname === "/investigate" && request.method === "POST") {
@@ -164,7 +189,7 @@ export default {
 
     if (url.pathname === "/simulator/status") {
       return Response.json({
-        version: "0.4-control-desk",
+        version: "0.4-message-bus",
         defaults: {
           logicalTasks: DEFAULT_LOGICAL_TASKS,
           tasksPerBatch: TASKS_PER_BATCH,
@@ -180,7 +205,7 @@ export default {
       });
     }
 
-    return new Response("SEYMOUR SWARM ORCHESTRATOR v0.4\nPOST /control-desk {mission, scope?, roles?, dryRun?}\nPOST /investigate {question, logicalTaskCount?, dryRun?, useWorkflow?}\nGET /graph/{requestId}\nGET /workflow/{instanceId}\nGET /simulator/status", { status: 200 });
+    return new Response("SEYMOUR SWARM ORCHESTRATOR v0.4\nPOST /control-desk {mission, scope?, roles?, dryRun?}\nPOST /bus/enqueue {from, to, payload}\nPOST /bus/direct {toBinding, payload}\nPOST /bus/state {key, value}\nPOST /investigate {question, logicalTaskCount?, dryRun?, useWorkflow?}\nGET /graph/{requestId}\nGET /workflow/{instanceId}\nGET /simulator/status", { status: 200 });
   },
 
   async queue(batch: MessageBatch, env: Env): Promise<void> {
