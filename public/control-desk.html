@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Seymour Control Desk v0.4</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; background: #0f172a; color: #e2e8f0; }
+    h1 { color: #93c5fd; }
+    form { display: flex; flex-direction: column; gap: 0.75rem; }
+    textarea, input, button { font: inherit; padding: 0.5rem; border-radius: 6px; border: 1px solid #334155; background: #1e293b; color: inherit; }
+    button { background: #1d4ed8; color: white; cursor: pointer; }
+    button:hover { background: #2563eb; }
+    pre { background: #020617; padding: 1rem; border-radius: 6px; overflow: auto; white-space: pre-wrap; }
+    .note { color: #94a3b8; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>Seymour Control Desk v0.4</h1>
+  <p class="note">Offline demo. Point the endpoint at your local or authenticated Worker when ready. No credentials stored.</p>
+  <form id="mission">
+    <label>Mission</label>
+    <textarea id="missionText" rows="4" placeholder="Describe the mission scope..." required></textarea>
+    <label>Scope (optional)</label>
+    <input id="scope" type="text" placeholder="e.g. research only, no deployment">
+    <label>Roles (optional, comma-separated)</label>
+    <input id="roles" type="text" placeholder="source, audit, math">
+    <label><input type="checkbox" id="dryRun" checked> Dry run (default)</label>
+    <button type="submit">Submit Mission</button>
+  </form>
+  <h2>Receipt</h2>
+  <pre id="receipt">Waiting for mission...</pre>
+  <script>
+    const form = document.getElementById('mission');
+    const receiptEl = document.getElementById('receipt');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        mission: document.getElementById('missionText').value,
+        scope: document.getElementById('scope').value || undefined,
+        roles: document.getElementById('roles').value ? document.getElementById('roles').value.split(',').map(s => s.trim()) : undefined,
+        dryRun: document.getElementById('dryRun').checked
+      };
+      receiptEl.textContent = 'Sending...';
+      try {
+        // Change this URL to your Worker endpoint when available
+        const res = await fetch('/control-desk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        receiptEl.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        receiptEl.textContent = 'Error: ' + err.message + '\n\n(Endpoint not reachable in pure offline mode. Wire to Worker when ready.)';
+      }
+    });
+  </script>
+</body>
+</html>
