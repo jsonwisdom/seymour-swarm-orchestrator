@@ -35,6 +35,115 @@ var COMMS_DIRECTORY = {
   next: "Verify bot endpoints, authenticate, test messages, record delivery receipts; do not interpret acknowledgments as completion."
 };
 
+// src/recovery.ts
+var REGISTRY = "seymour-mission-registry-v1";
+function registry(env) {
+  return env.MISSION_STATE?.getByName(REGISTRY);
+}
+__name(registry, "registry");
+async function saveCheckpoint(env, checkpoint) {
+  const stub = registry(env);
+  if (!stub) return { saved: false, note: "MISSION_STATE not bound" };
+  return stub.save(checkpoint);
+}
+__name(saveCheckpoint, "saveCheckpoint");
+async function loadCheckpoint(env, missionId) {
+  const stub = registry(env);
+  if (!stub) return null;
+  return stub.load(missionId);
+}
+__name(loadCheckpoint, "loadCheckpoint");
+async function listUnfinished(env) {
+  const stub = registry(env);
+  if (!stub) return [];
+  return stub.unfinished();
+}
+__name(listUnfinished, "listUnfinished");
+
+// src/auto-persistence.ts
+var AUTO_PROBE_ID = "seymour-scheduled-storage-proof-v1";
+var MARKER = "seymour-cron-storage-proof";
+var HISTORY = "seymour-previous-probe-v1";
+async function runAutomatedPersistenceProbe(env, now = Date.now()) {
+  const at = new Date(now).toISOString();
+  if (!env.MISSION_STATE) return {
+    schema: "SEYMOUR_AUTOMATED_PERSISTENCE_V1",
+    result: "FAIL",
+    at,
+    priorRunVerified: false,
+    currentRoundtripVerified: false,
+    revision: null,
+    error: "MISSION_STATE_NOT_BOUND"
+  };
+  const prior = await loadCheckpoint(env, HISTORY);
+  let priorRunVerified = false;
+  let currentRoundtripVerified = false;
+  let revision = null;
+  try {
+    if (prior?.status === "DELIVERED" && typeof prior.payload === "object" && prior.payload !== null) {
+      const p = prior.payload;
+      const past = await loadCheckpoint(env, AUTO_PROBE_ID);
+      priorRunVerified = p.marker === MARKER && p.revision === past?.revision && past?.payload !== null && typeof past?.payload === "object" && past.payload.runId === p.runId && p.runId.length >= 10;
+    }
+    const runId = crypto.randomUUID();
+    const seed = { runId, marker: MARKER, revision: 0, timestamp: now };
+    const start = await saveCheckpoint(env, {
+      missionId: AUTO_PROBE_ID,
+      status: "STARTED",
+      lastStep: "cron-started",
+      payload: seed,
+      timestamp: now,
+      note: "Synthetic scheduled probe; no user content"
+    });
+    if (!start.saved || !("revision" in start)) throw Error("STARTED_SAVE_FAILED");
+    const startRead = await loadCheckpoint(env, AUTO_PROBE_ID);
+    if (startRead?.status !== "STARTED" || startRead.revision !== start.revision || startRead.payload?.runId !== runId) throw Error("STARTED_READ_MISMATCH");
+    const progress = await saveCheckpoint(env, {
+      missionId: AUTO_PROBE_ID,
+      status: "DELIVERED",
+      lastStep: "cron-delivered",
+      payload: { ...seed, revision: start.revision + 1 },
+      timestamp: now,
+      note: "Synthetic scheduled probe; verify next cron reads this value"
+    });
+    if (!progress.saved || !("revision" in progress) || progress.revision !== start.revision + 1) throw Error("REVISION_MISMATCH");
+    const finalRead = await loadCheckpoint(env, AUTO_PROBE_ID);
+    if (finalRead?.status !== "DELIVERED" || finalRead.revision !== progress.revision || finalRead.payload?.runId !== runId) throw Error("FINAL_READ_MISMATCH");
+    currentRoundtripVerified = true;
+    revision = progress.revision;
+    const result = priorRunVerified ? "PASS" : "FAIL";
+    await saveCheckpoint(env, {
+      missionId: HISTORY,
+      status: "DELIVERED",
+      lastStep: "cron-result",
+      payload: { runId, marker: MARKER, revision: progress.revision, timestamp: now },
+      timestamp: now,
+      note: result === "PASS" ? "PASS: prior scheduled run survived and current read/write checked" : "HOLD: current read/write checked, previous-run proof pending or failed"
+    });
+    return {
+      schema: "SEYMOUR_AUTOMATED_PERSISTENCE_V1",
+      result,
+      at,
+      priorRunVerified,
+      currentRoundtripVerified,
+      revision,
+      ...result === "FAIL" ? { error: "PREVIOUS_RUN_NOT_VERIFIED" } : {}
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : "UNEXPECTED_ERROR";
+    return {
+      schema: "SEYMOUR_AUTOMATED_PERSISTENCE_V1",
+      result: "FAIL",
+      at,
+      priorRunVerified,
+      currentRoundtripVerified,
+      revision,
+      error
+    };
+  }
+}
+__name(runAutomatedPersistenceProbe, "runAutomatedPersistenceProbe");
+
 // src/recovery-operator.ts
 var RECOVERY_OPERATOR_HTML = `<!doctype html>
 <html lang="en">
@@ -491,31 +600,6 @@ async function updateSharedState(env, key, value) {
 }
 __name(updateSharedState, "updateSharedState");
 
-// src/recovery.ts
-var REGISTRY = "seymour-mission-registry-v1";
-function registry(env) {
-  return env.MISSION_STATE?.getByName(REGISTRY);
-}
-__name(registry, "registry");
-async function saveCheckpoint(env, checkpoint) {
-  const stub = registry(env);
-  if (!stub) return { saved: false, note: "MISSION_STATE not bound" };
-  return stub.save(checkpoint);
-}
-__name(saveCheckpoint, "saveCheckpoint");
-async function loadCheckpoint(env, missionId) {
-  const stub = registry(env);
-  if (!stub) return null;
-  return stub.load(missionId);
-}
-__name(loadCheckpoint, "loadCheckpoint");
-async function listUnfinished(env) {
-  const stub = registry(env);
-  if (!stub) return [];
-  return stub.unfinished();
-}
-__name(listUnfinished, "listUnfinished");
-
 // src/index.ts
 var DEFAULT_LOGICAL_TASKS = 73e3;
 var TASKS_PER_BATCH = 270;
@@ -755,6 +839,23 @@ var index_default = {
       });
     }
     return new Response("SEYMOUR SWARM ORCHESTRATOR v0.4\nPOST /control-desk {mission, scope?, roles?, dryRun?}\nPOST /bus/enqueue {from, to, payload}\nPOST /bus/direct {toBinding, payload}\nPOST /bus/state {key, value}\nPOST /recovery/save {missionId, status, lastStep, payload, timestamp, note}\nGET /recovery/load/{missionId}\nGET /recovery/unfinished\nPOST /investigate {question, logicalTaskCount?, dryRun?, useWorkflow?}\nGET /graph/{requestId}\nGET /workflow/{instanceId}\nGET /simulator/status", { status: 200 });
+  },
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil((async () => {
+      const result = await runAutomatedPersistenceProbe(env);
+      console.log(JSON.stringify({
+        event: "SEYMOUR_AUTOMATED_PERSISTENCE_V1",
+        result: result.result,
+        priorRunVerified: result.priorRunVerified,
+        currentRoundtripVerified: result.currentRoundtripVerified,
+        revision: result.revision,
+        at: result.at,
+        error: result.error ?? null
+      }));
+      if (result.result !== "PASS" && result.error !== "PREVIOUS_RUN_NOT_VERIFIED") {
+        throw Error("SEYMOUR_AUTOMATED_PERSISTENCE_FAILED:" + result.error);
+      }
+    })());
   },
   async queue(batch, env) {
     const touched = /* @__PURE__ */ new Set();
