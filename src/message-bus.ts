@@ -1,3 +1,5 @@
+import type { MissionState } from "./mission-state";
+
 // Seymour v0.4 Agent Message Bus skeleton
 // Service Bindings for direct calls, Queues for async jobs, Durable Objects for shared state.
 // No credentials, no deployment performed.
@@ -19,7 +21,7 @@ export interface BusEnv {
   BUS_QUEUE?: Queue;
 
   // Durable Object for shared task / mission state
-  MISSION_STATE?: DurableObjectNamespace;
+  MISSION_STATE?: DurableObjectNamespace<MissionState>;
 }
 
 export async function sendDirect(env: BusEnv, toBinding: string, payload: unknown): Promise<Response> {
