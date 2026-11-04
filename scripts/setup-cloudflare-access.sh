@@ -1,98 +1,80 @@
 #!/usr/bin/env bash
-# Seymour — Cloudflare Access setup script
-# Checks Access status, attempts API-supported configuration,
-# and records Human Intervention Required (HIR) steps.
-# Does not accept billing terms or activate Access automatically.
-
+# Seymour — read-only Cloudflare Access preflight. Never accepts terms or creates tokens.
 set -euo pipefail
-
 WORKER_NAME="${WORKER_NAME:-seymour-swarm-orchestrator}"
 ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-}"
 API_TOKEN="${CLOUDFLARE_API_TOKEN:-}"
-
+API="https://api.cloudflare.com/client/v4"
 if [[ -z "$ACCOUNT_ID" || -z "$API_TOKEN" ]]; then
-  echo "ERROR: Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN."
-  echo "Create a token at https://dash.cloudflare.com/profile/api-tokens with:"
-  echo "  - Account.Access: Organizations, Identity Providers, and Groups: Edit"
-  echo "  - Account.Access: Apps and Policies: Edit"
-  echo "  - Account.Workers Scripts: Edit"
+  echo "HIR: Local CLI credentials unavailable. Prefer the connected Cloudflare interface; never paste tokens in chat." >&2
   exit 1
 fi
-
-API="https://api.cloudflare.com/client/v4"
-AUTH="Authorization: Bearer $API_TOKEN"
-
-echo "=== Seymour Cloudflare Access Setup ==="
-echo "Worker: $WORKER_NAME"
-echo "Account: $ACCOUNT_ID"
-echo
-
-# 1. Check Access status
-echo "[1/4] Checking Cloudflare Access status..."
-ACCESS_RESP=$(curl -s -H "$AUTH" "$API/accounts/$ACCOUNT_ID/access/organizations")
-ACCESS_SUCCESS=$(echo "$ACCESS_RESP" | jq -r '.success // false')
-ACCESS_ERROR=$(echo "$ACCESS_RESP" | jq -r '.errors[0].code // empty')
-
-if [[ "$ACCESS_SUCCESS" != "true" ]]; then
-  echo "ACCESS STATUS: NOT ENABLED"
-  echo "Error: $ACCESS_ERROR"
-  echo
-  echo "=== HUMAN INTERVENTION REQUIRED ==="
-  echo "Blocked operation: Enable Cloudflare Access"
-  echo "Reason: Access is not activated on this account."
-  echo "Minimum action: Open https://one.dash.cloudflare.com and select Enable Access."
-  echo "Review Free plan terms before accepting."
-  echo "After activation, re-run this script."
+command -v curl >/dev/null || { echo "FAIL: curl unavailable" >&2; exit 8; }
+command -v jq >/dev/null || { echo "FAIL: jq unavailable" >&2; exit 8; }
+cf_get() {
+  local raw
+  if ! raw="$(curl -sS --connect-timeout 10 --max-time 30 -H "Authorization: Bearer $API_TOKEN" -H 'Accept: application/json' -w '\n%{http_code}' "$API$1")"; then
+    echo "UNKNOWN: Cloudflare API transport failure; not evidence of missing resources." >&2
+    exit 8
+  fi
+  HTTP="${raw##*$'\n'}"
+  BODY="${raw%$'\n'*}"
+  if ! jq -e . <<<"$BODY" >/dev/null 2>&1; then
+    echo "UNKNOWN: non-JSON response, HTTP $HTTP" >&2
+    exit 8
+  fi
+}
+require_success() {
+  if [[ "$HTTP" != 200 ]] || ! jq -e '.success == true' <<<"$BODY" >/dev/null; then
+    echo "UNKNOWN: Cloudflare API HTTP $HTTP, code $(jq -r '.errors[0].code // "unknown"' <<<"$BODY"). This may be missing permissions, not an absent resource." >&2
+    exit 8
+  fi
+}
+echo "=== SEYMOUR ACCESS PREFLIGHT — READ ONLY ==="
+cf_get "/accounts/$ACCOUNT_ID/access/organizations"
+if [[ "$HTTP" == 403 ]] && jq -e '.errors[]?.message | contains("access.api.error.not_enabled")' <<<"$BODY" >/dev/null; then
+  echo "HOLD: ACCESS_NOT_ENABLED (HTTP 403 / access.api.error.not_enabled)"
+  echo "HIR: Account owner must review and approve account enrollment/terms in Zero Trust."
+  echo "Do not treat a Drive design document as an activated Access organization."
   exit 2
 fi
-
-echo "ACCESS STATUS: ENABLED"
-
-# 2. List existing Access applications
-echo "[2/4] Listing Access applications..."
-APPS=$(curl -s -H "$AUTH" "$API/accounts/$ACCOUNT_ID/access/apps")
-echo "$APPS" | jq -r '.result[] | "\(.name) \(.domain)"' 2>/dev/null || echo "(none or unable to parse)"
-
-# 3. Check for Seymour application
-SEYMOUR_APP=$(echo "$APPS" | jq -r --arg d "seymour-swarm-orchestrator.jaywisdom44.workers.dev" '.result[] | select(.domain == $d) | .id' 2>/dev/null || true)
-if [[ -z "$SEYMOUR_APP" ]]; then
-  echo
-  echo "=== HUMAN INTERVENTION REQUIRED ==="
-  echo "Blocked operation: Create Access application for Seymour"
-  echo "Reason: No application found for seymour-swarm-orchestrator.jaywisdom44.workers.dev"
-  echo "Minimum action: Create a Self-hosted application in Zero Trust → Access → Applications."
-  echo "  Domain: seymour-swarm-orchestrator.jaywisdom44.workers.dev"
-  echo "  Protect: /recovery/*, /investigate, /graph/*, /workflow/*, /bus/*, /control-desk"
-  echo "  Leave public: /health, /comms/who, /simulator/status"
-  echo "After creation, re-run this script to continue."
+require_success
+echo "PASS: Access organization exists"
+cf_get "/accounts/$ACCOUNT_ID/workers/subdomain"
+require_success
+SUBDOMAIN="$(jq -r '.result.subdomain // empty' <<<"$BODY")"
+if [[ -z "$SUBDOMAIN" ]]; then
+  echo "UNKNOWN: Account subdomain missing; unable to check exact Seymour host"
+  exit 8
+fi
+HOST="$WORKER_NAME.$SUBDOMAIN.workers.dev"
+cf_get "/accounts/$ACCOUNT_ID/access/apps"
+require_success
+APP_ID="$(jq -r --arg h "$HOST" '.result[]? | select((.domain // "") == $h or any(.domain_list[]?; (.domain // "") == $h)) | .id' <<<"$BODY" | head -n1)"
+if [[ -z "$APP_ID" ]]; then
+  echo "HOLD: No Access application found for $HOST"
+  echo "Next automated step after approval: create a carefully scoped Access application and policy; preserve /health and /comms/who."
   exit 3
 fi
-
-echo "Seymour Access application found: $SEYMOUR_APP"
-
-# 4. Check Worker secrets
-echo "[3/4] Checking Worker secrets..."
-SECRETS=$(curl -s -H "$AUTH" "$API/accounts/$ACCOUNT_ID/workers/scripts/$WORKER_NAME/secrets")
-echo "$SECRETS" | jq -r '.result[]?.name // empty' 2>/dev/null || echo "(none)"
-
-HAS_ALLOWLIST=$(echo "$SECRETS" | jq -r '.result[]?.name | select(. == "ACCESS_ALLOWLIST")' 2>/dev/null || true)
-HAS_ORCH=$(echo "$SECRETS" | jq -r '.result[]?.name | select(. == "ACCESS_ORCHESTRATION_ALLOWLIST")' 2>/dev/null || true)
-
-if [[ -z "$HAS_ALLOWLIST" || -z "$HAS_ORCH" ]]; then
-  echo
-  echo "=== HUMAN INTERVENTION REQUIRED ==="
-  echo "Blocked operation: Set ACCESS_ALLOWLIST and ACCESS_ORCHESTRATION_ALLOWLIST"
-  echo "Reason: Secrets are not configured on the Worker."
-  echo "Minimum action: Provide the authorized operator email(s) via a secure channel, then run:"
-  echo "  echo '<comma-separated-emails>' | npx wrangler secret put ACCESS_ALLOWLIST --name $WORKER_NAME"
-  echo "  echo '<comma-separated-emails>' | npx wrangler secret put ACCESS_ORCHESTRATION_ALLOWLIST --name $WORKER_NAME"
-  echo "Do not paste secrets into chat."
+echo "PASS: Access application exists (ID $APP_ID)"
+cf_get "/accounts/$ACCOUNT_ID/access/apps/$APP_ID/policies"
+require_success
+if ! jq -e '.result | length > 0' <<<"$BODY" >/dev/null; then
+  echo "HOLD: Access application has no policies"
+  exit 3
+fi
+echo "CONFIGURED: Access application has policies; test actual authorization separately."
+cf_get "/accounts/$ACCOUNT_ID/workers/scripts/$WORKER_NAME/secrets"
+require_success
+if ! jq -e '.result | any(.[]; .name == "ACCESS_ALLOWLIST")' <<<"$BODY" >/dev/null; then
+  echo "HOLD: ACCESS_ALLOWLIST Worker secret not configured"
+  echo "Provision through Cloudflare Secrets only after a verified operator identity exists."
   exit 4
 fi
-
-echo "[4/4] Secrets present."
-echo
-echo "=== SETUP COMPLETE ==="
-echo "Access is enabled, Seymour application exists, and allowlist secrets are set."
-echo "Next: run the authenticated recovery round-trip against:"
-echo "  https://seymour-swarm-orchestrator.jaywisdom44.workers.dev"
+echo "CONFIGURED: ACCESS_ALLOWLIST (secret value not fetched)"
+if jq -e '.result | any(.[]; .name == "ACCESS_ORCHESTRATION_ALLOWLIST")' <<<"$BODY" >/dev/null; then
+  echo "CONFIGURED: additional orchestration grant"
+else
+  echo "INFO: orchestration grant absent; this is the safe default."
+fi
+echo "CONFIGURATION CHECK PASS; authenticated recovery and live permissions still require end-to-end HTTP proof."
