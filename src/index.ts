@@ -2,6 +2,7 @@ import { TaskLedger, Task } from "./task-ledger";
 import { InvestigationWorkflow } from "./investigation-workflow";
 import { handleControlDesk } from "./control-desk";
 import { enqueueAsync, sendDirect, updateSharedState } from "./message-bus";
+import { saveCheckpoint, loadCheckpoint, listUnfinished, MissionCheckpoint } from "./recovery";
 
 export interface Env {
   TASK_LEDGER: DurableObjectNamespace<TaskLedger>;
@@ -44,6 +45,23 @@ export default {
     if (url.pathname === "/bus/state" && request.method === "POST") {
       const body = await request.json() as any;
       return updateSharedState(env, body.key || "default", body.value);
+    }
+
+    if (url.pathname === "/recovery/save" && request.method === "POST") {
+      const body = await request.json() as MissionCheckpoint;
+      const result = await saveCheckpoint(env, body);
+      return Response.json(result);
+    }
+
+    if (url.pathname.startsWith("/recovery/load/") && request.method === "GET") {
+      const missionId = url.pathname.split("/")[3];
+      const checkpoint = await loadCheckpoint(env, missionId);
+      return Response.json(checkpoint ?? { note: "No checkpoint found or state not bound" });
+    }
+
+    if (url.pathname === "/recovery/unfinished" && request.method === "GET") {
+      const ids = await listUnfinished(env);
+      return Response.json({ unfinished: ids });
     }
 
     if (url.pathname === "/investigate" && request.method === "POST") {
@@ -189,7 +207,7 @@ export default {
 
     if (url.pathname === "/simulator/status") {
       return Response.json({
-        version: "0.4-message-bus",
+        version: "0.4-recovery",
         defaults: {
           logicalTasks: DEFAULT_LOGICAL_TASKS,
           tasksPerBatch: TASKS_PER_BATCH,
@@ -205,7 +223,7 @@ export default {
       });
     }
 
-    return new Response("SEYMOUR SWARM ORCHESTRATOR v0.4\nPOST /control-desk {mission, scope?, roles?, dryRun?}\nPOST /bus/enqueue {from, to, payload}\nPOST /bus/direct {toBinding, payload}\nPOST /bus/state {key, value}\nPOST /investigate {question, logicalTaskCount?, dryRun?, useWorkflow?}\nGET /graph/{requestId}\nGET /workflow/{instanceId}\nGET /simulator/status", { status: 200 });
+    return new Response("SEYMOUR SWARM ORCHESTRATOR v0.4\nPOST /control-desk {mission, scope?, roles?, dryRun?}\nPOST /bus/enqueue {from, to, payload}\nPOST /bus/direct {toBinding, payload}\nPOST /bus/state {key, value}\nPOST /recovery/save {missionId, status, lastStep, payload, timestamp, note}\nGET /recovery/load/{missionId}\nGET /recovery/unfinished\nPOST /investigate {question, logicalTaskCount?, dryRun?, useWorkflow?}\nGET /graph/{requestId}\nGET /workflow/{instanceId}\nGET /simulator/status", { status: 200 });
   },
 
   async queue(batch: MessageBatch, env: Env): Promise<void> {
