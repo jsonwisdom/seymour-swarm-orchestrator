@@ -357,7 +357,7 @@ function wheelCoverage(workerCount, externalCount) {
 __name(wheelCoverage, "wheelCoverage");
 
 // src/drive-snapshot.ts
-var DRIVE_SNAPSHOT_DATE = "2026-11-04T10:30:00Z";
+var DRIVE_SNAPSHOT_DATE = "2026-11-04T10:41:00Z";
 var DRIVE_POINTERS = [
   {
     id: "1dTdg68kOHSKF5epPS7R9JEoMXzOn1cAYBwwX6etqmC4",
@@ -462,6 +462,78 @@ var DRIVE_POINTERS = [
     href: "https://docs.google.com/document/d/1Ea6jfC0WiWJiFQhUKLHh1gbqbVBvHLn1wbDWnwOedz4",
     status: "SYSTEM",
     excerpt: "Constitutional system design."
+  },
+  {
+    id: "1O22teQasYg8R5Q5IiE0czu8YzK5vb-Ja",
+    title: "JASON_HISTORICAL_COVERAGE_2014_2026_READONLY_V01.md",
+    modified: "2026-10-29T04:56:19Z",
+    href: "https://drive.google.com/file/d/1O22teQasYg8R5Q5IiE0czu8YzK5vb-Ja",
+    status: "RECOVERY_INDEX",
+    excerpt: "Historical coverage index 2014\u20132026. Denominator remains unproven."
+  },
+  {
+    id: "1PxW9jD7MqKpYtkTzoW83R21Kn2K_kD_M",
+    title: "JASON_ESTATE_DISCOVERY_OODA_2026-10-28.md",
+    modified: "2026-10-29T04:49:40Z",
+    href: "https://drive.google.com/file/d/1PxW9jD7MqKpYtkTzoW83R21Kn2K_kD_M",
+    status: "RECOVERY_INDEX",
+    excerpt: "Estate discovery OODA record."
+  },
+  {
+    id: "1RtjRyLMFLVzmO3vakzB4FBrnt3o4X23w",
+    title: "JASON_EVIDENCE_FIRST_DRIVE_INDEX_2026-10-28.md",
+    modified: "2026-10-29T04:47:58Z",
+    href: "https://drive.google.com/file/d/1RtjRyLMFLVzmO3vakzB4FBrnt3o4X23w",
+    status: "RECOVERY_INDEX",
+    excerpt: "Evidence-first Drive index."
+  },
+  {
+    id: "1b1CgalxdIGlZ27gyIybNQ3a29XvUL06t",
+    title: "JASON_EVIDENCE_FIRST_DRIVE_BYTE_MANIFEST_2026-10-28.json",
+    modified: "2026-10-29T04:48:04Z",
+    href: "https://drive.google.com/file/d/1b1CgalxdIGlZ27gyIybNQ3a29XvUL06t",
+    status: "RECOVERY_INDEX",
+    excerpt: "Byte manifest for evidence-first Drive archive."
+  },
+  {
+    id: "11oJkal3zTf7jWeN1jZm6BYDqed0B1SyITK_U0AFLHbo",
+    title: "Jason's Daily \u2014 ChatGPT Map \u2014 JSONWisdom Replay",
+    modified: "2026-10-14T22:09:29Z",
+    href: "https://docs.google.com/document/d/11oJkal3zTf7jWeN1jZm6BYDqed0B1SyITK_U0AFLHbo",
+    status: "RECOVERY_INDEX",
+    excerpt: "Daily ChatGPT map and JSONWisdom replay."
+  },
+  {
+    id: "1fKeOEGs5FQpU9DCxJ6p5meXaG5Xj1gwj",
+    title: "JASONS_DAILY_RECOVERY_2026-09-09_TO_2026-09-26_V0_1.md",
+    modified: "2026-09-27T02:43:39Z",
+    href: "https://drive.google.com/file/d/1fKeOEGs5FQpU9DCxJ6p5meXaG5Xj1gwj",
+    status: "RECOVERY_INDEX",
+    excerpt: "Daily recovery log for 2026-09-09 to 2026-09-26."
+  },
+  {
+    id: "1gWZ67ul67i9Gcj6V_ZDyN0_0cU4KRQfLCEWHVjbDG1U",
+    title: "MASTER_ROOM_BUILD_2026-09-23_V1",
+    modified: "2026-10-15T00:47:33Z",
+    href: "https://docs.google.com/document/d/1gWZ67ul67i9Gcj6V_ZDyN0_0cU4KRQfLCEWHVjbDG1U",
+    status: "LINEAGE",
+    excerpt: "Master Room build record."
+  },
+  {
+    id: "1aTmUgkwKuR8NsXCxH-6417QsUnVSyA7dA_6T830MXRo",
+    title: "MASTER_ROOM_CHATGPT_CONVERSATION_LINEAGE_V1",
+    modified: "2026-09-23T18:25:45Z",
+    href: "https://docs.google.com/document/d/1aTmUgkwKuR8NsXCxH-6417QsUnVSyA7dA_6T830MXRo",
+    status: "LINEAGE",
+    excerpt: "ChatGPT conversation lineage for Master Room."
+  },
+  {
+    id: "citizen-root-minnesota-recovery-v1",
+    title: "Operation Computer Wisdom Minnesota \u2014 Classes with Glasses Recovery",
+    modified: "2026-11-04T10:40:10Z",
+    href: "https://github.com/jsonwisdom/CITIZEN_ROOT/blob/652742579e236b7ddf22e540cfdb73eb306e83b6/registry/OPERATION_COMPUTER_WISDOM_MINNESOTA_CLASSES_WITH_GLASSES_RECOVERY_V1.json",
+    status: "LEARNING_POINTER",
+    excerpt: "Public recovery manifest. 7 verified learning pages in COMPUTERWISDOM. Student records withheld. Authority false. Merkle root pending."
   }
 ];
 
