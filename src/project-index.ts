@@ -1,6 +1,6 @@
 import type { RecoveryEnv } from "./recovery";
 import { listUnfinished } from "./recovery";
-import { DRIVE_POINTERS, DRIVE_SNAPSHOT_DATE } from "./drive-snapshot";
+import { fetchLiveDrivePointers, type DriveLiveEnv } from "./drive-live";
 
 export interface ProjectIndexEntry {
   id: string;
@@ -26,19 +26,25 @@ export interface ProjectRecoveryIndex {
   external: {
     pointers: ProjectIndexEntry[];
     count: number;
+    source: "LIVE" | "SNAPSHOT";
     snapshotDate: string;
     note: string;
+    error?: string;
   };
   summary: {
     total: number;
     actionable: number;
     externalCount: number;
+    driveLive: boolean;
   };
 }
 
-export async function buildProjectIndex(env: RecoveryEnv): Promise<ProjectRecoveryIndex> {
+export async function buildProjectIndex(
+  env: RecoveryEnv & DriveLiveEnv
+): Promise<ProjectRecoveryIndex> {
   const now = new Date().toISOString();
   const unfinished = await listUnfinished(env);
+  const drive = await fetchLiveDrivePointers(env);
 
   const workerEntries: ProjectIndexEntry[] = unfinished.map(m => ({
     id: m.missionId,
@@ -51,7 +57,7 @@ export async function buildProjectIndex(env: RecoveryEnv): Promise<ProjectRecove
     note: "Durable Object checkpoint"
   }));
 
-  const externalEntries: ProjectIndexEntry[] = DRIVE_POINTERS.map(p => ({
+  const externalEntries: ProjectIndexEntry[] = drive.pointers.map(p => ({
     id: p.id,
     source: "EXTERNAL_POINTER",
     status: p.status,
@@ -59,7 +65,9 @@ export async function buildProjectIndex(env: RecoveryEnv): Promise<ProjectRecove
     updatedAt: Date.parse(p.modified),
     revision: null,
     title: p.title,
-    note: "Google Drive snapshot — committed metadata, not live sync",
+    note: drive.source === "LIVE"
+      ? "Live Google Drive listing"
+      : "Google Drive snapshot — live connector unavailable",
     href: p.href,
     excerpt: p.excerpt
   }));
@@ -81,13 +89,18 @@ export async function buildProjectIndex(env: RecoveryEnv): Promise<ProjectRecove
     external: {
       pointers: externalEntries,
       count: externalEntries.length,
-      snapshotDate: DRIVE_SNAPSHOT_DATE,
-      note: "External Drive documents are from a committed snapshot. They are not loaded live and do not prove runtime state. Re-sync by updating src/drive-snapshot.ts."
+      source: drive.source,
+      snapshotDate: drive.fetchedAt,
+      note: drive.source === "LIVE"
+        ? "Live Drive API response."
+        : "Fell back to committed snapshot. Set GOOGLE_SERVICE_ACCOUNT secret and share files with the service account to enable live sync.",
+      ...(drive.error ? { error: drive.error } : {})
     },
     summary: {
       total: workerEntries.length + externalEntries.length,
       actionable,
-      externalCount: externalEntries.length
+      externalCount: externalEntries.length,
+      driveLive: drive.source === "LIVE"
     }
   };
 }
