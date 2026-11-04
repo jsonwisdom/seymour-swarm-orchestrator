@@ -275,6 +275,63 @@ var LIVE_HEADERS = {
   "Content-Security-Policy": "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 };
 
+// src/project-index.ts
+var DRIVE_POINTERS = [
+  { id: "1dTdg68kOHSKF5epPS7R9JEoMXzOn1cAYBwwX6etqmC4", title: "Seymour Supreme \u2014 Media, Women & Girls, Twelve Lanes of Justice \u2014 DESIGN_HOLD \u2014 2026-10-20", modified: "2026-10-20T21:50:53Z", href: "https://docs.google.com/document/d/1dTdg68kOHSKF5epPS7R9JEoMXzOn1cAYBwwX6etqmC4" },
+  { id: "1gDG2jlGYH3DzM9Xx6HeKy8RmShLSznZOap7MTfUf2hc", title: "JASON_ON_BASE_FAMILY_GAME_WOLFRAM_SEYMOUR_REPLAY_V0_1 \u2014 Design HOLD", modified: "2026-10-12T02:09:17Z", href: "https://docs.google.com/document/d/1gDG2jlGYH3DzM9Xx6HeKy8RmShLSznZOap7MTfUf2hc" },
+  { id: "1SW0HMFtvsufxdR-c0xwqhiKizzTz8IXLmR9WUaIeoiA", title: "SeymourSupreme \u2014 Jason Role Promotion and Warrant Gate V0.1", modified: "2026-10-08T21:13:15Z", href: "https://docs.google.com/document/d/1SW0HMFtvsufxdR-c0xwqhiKizzTz8IXLmR9WUaIeoiA" },
+  { id: "100U0n7jJG0RYynStfnk3_RPphBGk5N81R-2MenldBTI", title: "SUPREME_SEYMOUR_CONSTITUTIONAL_RUNTIME_V1", modified: "2026-09-24T19:12:47Z", href: "https://docs.google.com/document/d/100U0n7jJG0RYynStfnk3_RPphBGk5N81R-2MenldBTI" },
+  { id: "1Ea6jfC0WiWJiFQhUKLHh1gbqbVBvHLn1wbDWnwOedz4", title: "SUPREME_SEYMOUR_CONSTITUTIONAL_SYSTEM_2026-09-23", modified: "2026-09-23T16:51:02Z", href: "https://docs.google.com/document/d/1Ea6jfC0WiWJiFQhUKLHh1gbqbVBvHLn1wbDWnwOedz4" }
+];
+async function buildProjectIndex(env) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const unfinished = await listUnfinished(env);
+  const workerEntries = unfinished.map((m) => ({
+    id: m.missionId,
+    source: "MISSION_STATE",
+    status: m.status,
+    lastStep: m.lastStep,
+    updatedAt: m.timestamp,
+    revision: m.revision,
+    title: m.missionId,
+    note: "Durable Object checkpoint"
+  }));
+  const externalEntries = DRIVE_POINTERS.map((p) => ({
+    id: p.id,
+    source: "EXTERNAL_POINTER",
+    status: "EXTERNAL",
+    lastStep: "drive-document",
+    updatedAt: Date.parse(p.modified),
+    revision: null,
+    title: p.title,
+    note: "Google Drive pointer \u2014 not synchronized into Worker",
+    href: p.href
+  }));
+  const actionable = workerEntries.filter(
+    (e) => e.status === "STARTED" || e.status === "IN_PROGRESS" || e.status === "HOLD"
+  ).length;
+  return {
+    schema: "SEYMOUR_PROJECT_INDEX_V1",
+    generatedAt: now,
+    worker: {
+      unfinished: workerEntries,
+      count: workerEntries.length,
+      note: workerEntries.length === 0 ? "No unfinished missions in Durable Object. Storage is empty or all work is DELIVERED." : "Unfinished missions from MISSION_STATE. These are the records Seymour can resume."
+    },
+    external: {
+      pointers: externalEntries,
+      count: externalEntries.length,
+      note: "External Drive documents are referenced only. They are not loaded into the Worker and do not prove runtime state."
+    },
+    summary: {
+      total: workerEntries.length + externalEntries.length,
+      actionable,
+      staleExternal: externalEntries.length
+    }
+  };
+}
+__name(buildProjectIndex, "buildProjectIndex");
+
 // src/recovery-operator.ts
 var RECOVERY_OPERATOR_HTML = `<!doctype html>
 <html lang="en">
@@ -743,7 +800,7 @@ function isAllowlisted(email, allowlist) {
 __name(isAllowlisted, "isAllowlisted");
 function hasRoutePermission(pathname, email, env) {
   if (!isAllowlisted(email, env.ACCESS_ALLOWLIST)) return false;
-  const recovery = pathname === "/recovery/save" || pathname === "/recovery/unfinished" || pathname === "/recovery/operator" || pathname === "/recovery/operator.js" || pathname === "/recovery/operator.css" || pathname === "/recovery/probe-now" || pathname === "/recovery/live" || pathname === "/recovery/live/status" || pathname === "/recovery/live.js" || pathname === "/recovery/live.css" || pathname.startsWith("/recovery/load/");
+  const recovery = pathname === "/recovery/save" || pathname === "/recovery/unfinished" || pathname === "/recovery/operator" || pathname === "/recovery/operator.js" || pathname === "/recovery/operator.css" || pathname === "/recovery/probe-now" || pathname === "/recovery/index" || pathname === "/recovery/live" || pathname === "/recovery/live/status" || pathname === "/recovery/live.js" || pathname === "/recovery/live.css" || pathname.startsWith("/recovery/load/");
   if (recovery) return true;
   const orchestration = pathname === "/investigate" || pathname === "/control-desk" || pathname.startsWith("/graph/") || pathname.startsWith("/workflow/") || pathname.startsWith("/bus/");
   return orchestration && isAllowlisted(email, env.ACCESS_ORCHESTRATION_ALLOWLIST);
@@ -780,6 +837,10 @@ var index_default = {
           );
         }
       }
+    }
+    if (request.method === "GET" && url.pathname === "/recovery/index") {
+      const index = await buildProjectIndex(env);
+      return Response.json(index, { headers: { "Cache-Control": "no-store" } });
     }
     if (request.method === "GET" && url.pathname === "/recovery/live") {
       return new Response(LIVE_DESK_HTML, { headers: LIVE_HEADERS });
@@ -1000,7 +1061,7 @@ var index_default = {
         }
       });
     }
-    return new Response("SEYMOUR SWARM ORCHESTRATOR v0.4\nPOST /control-desk {mission, scope?, roles?, dryRun?}\nPOST /bus/enqueue {from, to, payload}\nPOST /bus/direct {toBinding, payload}\nPOST /bus/state {key, value}\nPOST /recovery/save {missionId, status, lastStep, payload, timestamp, note}\nGET /recovery/load/{missionId}\nGET /recovery/unfinished\nGET /recovery/probe-now\nPOST /investigate {question, logicalTaskCount?, dryRun?, useWorkflow?}\nGET /graph/{requestId}\nGET /workflow/{instanceId}\nGET /simulator/status", { status: 200 });
+    return new Response("SEYMOUR SWARM ORCHESTRATOR v0.4\nGET /recovery/index\nGET /recovery/live\nPOST /control-desk {mission, scope?, roles?, dryRun?}\nPOST /bus/enqueue {from, to, payload}\nPOST /bus/direct {toBinding, payload}\nPOST /bus/state {key, value}\nPOST /recovery/save {missionId, status, lastStep, payload, timestamp, note}\nGET /recovery/load/{missionId}\nGET /recovery/unfinished\nGET /recovery/probe-now\nPOST /investigate {question, logicalTaskCount?, dryRun?, useWorkflow?}\nGET /graph/{requestId}\nGET /workflow/{instanceId}\nGET /simulator/status", { status: 200 });
   },
   async scheduled(_controller, env, ctx) {
     ctx.waitUntil((async () => {
