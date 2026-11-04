@@ -1,5 +1,6 @@
 import { TaskLedger, Task } from "./task-ledger";
 import { InvestigationWorkflow } from "./investigation-workflow";
+import { handleControlDesk } from "./control-desk";
 
 export interface Env {
   TASK_LEDGER: DurableObjectNamespace<TaskLedger>;
@@ -15,6 +16,10 @@ const AGENT_TYPES = ["source", "audit", "math", "legal", "replay", "receipt"] as
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname === "/control-desk" && request.method === "POST") {
+      return handleControlDesk(request);
+    }
 
     if (url.pathname === "/investigate" && request.method === "POST") {
       const body = await request.json() as { 
@@ -159,7 +164,7 @@ export default {
 
     if (url.pathname === "/simulator/status") {
       return Response.json({
-        version: "0.3-event-driven",
+        version: "0.4-control-desk",
         defaults: {
           logicalTasks: DEFAULT_LOGICAL_TASKS,
           tasksPerBatch: TASKS_PER_BATCH,
@@ -175,7 +180,7 @@ export default {
       });
     }
 
-    return new Response("SEYMOUR SWARM ORCHESTRATOR v0.2\nPOST /investigate {question, logicalTaskCount?, dryRun?, useWorkflow?}\nGET /graph/{requestId}\nGET /workflow/{instanceId}\nGET /simulator/status", { status: 200 });
+    return new Response("SEYMOUR SWARM ORCHESTRATOR v0.4\nPOST /control-desk {mission, scope?, roles?, dryRun?}\nPOST /investigate {question, logicalTaskCount?, dryRun?, useWorkflow?}\nGET /graph/{requestId}\nGET /workflow/{instanceId}\nGET /simulator/status", { status: 200 });
   },
 
   async queue(batch: MessageBatch, env: Env): Promise<void> {
