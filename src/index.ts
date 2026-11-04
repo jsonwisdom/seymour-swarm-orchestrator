@@ -10,31 +10,69 @@ export interface Env {
   TASK_LEDGER: DurableObjectNamespace<TaskLedger>;
   TASK_QUEUE: Queue;
   INVESTIGATION_WORKFLOW: Workflow;
-  // Optional bus bindings (declare in wrangler when ready)
   BUS_QUEUE?: Queue;
   MISSION_STATE?: DurableObjectNamespace<MissionState>;
   CONTROL_DESK_TOKEN?: string;
+  // Comma-separated emails allowed to perform privileged operations.
+  // Example: "jason@example.com,operator@example.com"
+  ACCESS_ALLOWLIST?: string;
 }
 
-// Illustrative fan-out simulator constants from SEYMOUR SWARM v0.2
 const DEFAULT_LOGICAL_TASKS = 73000;
 const TASKS_PER_BATCH = 270;
 const AGENT_TYPES = ["source", "audit", "math", "legal", "replay", "receipt"] as const;
 
+function isAllowlisted(email: string | undefined, allowlist: string | undefined): boolean {
+  if (!email || !allowlist) return false;
+  const allowed = allowlist.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+  return allowed.includes(email.toLowerCase());
+}
+
+function hasRoutePermission(pathname: string, email: string | undefined, allowlist: string | undefined): boolean {
+  // Until a full role system exists, allowlisted operators may access all private routes.
+  // Non-allowlisted Access identities are denied.
+  if (!isAllowlisted(email, allowlist)) return false;
+  return true;
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    // Only two harmless discovery endpoints are public.
-    // All mission, evidence, queue and orchestration routes fail closed
-    // when auth is missing. Never put CONTROL_DESK_TOKEN in public HTML.
+
+    // Public discovery routes — no authentication required.
     if (url.pathname === "/health" && request.method === "GET") {
       return Response.json({service:"seymour-swarm-orchestrator",status:"UP",verified:"transport-only",version:"0.4"});
     }
     const isPublic = (url.pathname === "/comms/who" && request.method === "GET") ||
       (url.pathname === "/simulator/status" && request.method === "GET");
-    if (!isPublic && (!env.CONTROL_DESK_TOKEN ||
-        request.headers.get("Authorization") !== "Bearer " + env.CONTROL_DESK_TOKEN)) {
-      return Response.json({error:"AUTH_REQUIRED",note:"Authenticated private gateway required."},{status:401});
+
+    // Private routes require verified authentication AND authorization.
+    // Prefer Cloudflare Access (ctx.access) when present.
+    // Fall back to CONTROL_DESK_TOKEN until Access is fully activated and tested.
+    // Never trust client-supplied headers alone.
+    if (!isPublic) {
+      const hasAccess = !!ctx.access;
+      const hasBearer = !!(env.CONTROL_DESK_TOKEN &&
+        request.headers.get("Authorization") === "Bearer " + env.CONTROL_DESK_TOKEN);
+
+      if (!hasAccess && !hasBearer) {
+        return Response.json(
+          {error:"AUTH_REQUIRED",note:"Cloudflare Access or authenticated private gateway required."},
+          {status:401}
+        );
+      }
+
+      // Authorization: Access identity must be on the explicit allowlist.
+      // Bearer-token callers are treated as the configured operator (no separate identity).
+      if (hasAccess && ctx.access) {
+        const email = ctx.access.userEmail;
+        if (!hasRoutePermission(url.pathname, email, env.ACCESS_ALLOWLIST)) {
+          return Response.json(
+            {error:"FORBIDDEN",note:"Identity not authorized for this operation."},
+            {status:403}
+          );
+        }
+      }
     }
 
     if (url.pathname === "/comms/who" && request.method === "GET") {
@@ -96,11 +134,8 @@ export default {
         useWorkflow?: boolean;
       };
       const requestId = body.requestId || crypto.randomUUID();
-      const logicalCount = Math.min(body.logicalTaskCount ?? DEFAULT_LOGICAL_TASKS, 100000); // hard cap for safety
+      const logicalCount = Math.min(body.logicalTaskCount ?? DEFAULT_LOGICAL_TASKS, 100000);
       const dryRun = body.dryRun === true;
-      // Guard Queue Free quota conservatively: 3 operations/message, and
-      // reserve headroom for retries/other account usage.
-      // 73k logical tasks remain simulator-only without a paid-capacity plan.
       if (!dryRun && logicalCount > 3000) {
         return Response.json({
           error: "FREE_TIER_EXECUTION_GUARD",
@@ -112,7 +147,6 @@ export default {
       const useWorkflow = body.useWorkflow === true;
       const stub = env.TASK_LEDGER.getByName(requestId);
 
-      // Generate logical tasks with diversity across agent types
       const logicalTasks: Partial<Task>[] = [];
       for (let i = 0; i < logicalCount; i++) {
         const agentType = AGENT_TYPES[i % AGENT_TYPES.length];
@@ -158,9 +192,6 @@ export default {
       }
       if (currentBatch.length > 0) batches.push(currentBatch);
 
-      // Start monitor BEFORE enqueue to reduce completion-signal races.
-      // If the signal still precedes waitForEvent, the Workflow checks
-      // the ledger first and has a bounded timeout reconciliation.
       let workflowInstanceId: string | undefined;
       if (useWorkflow && !dryRun) {
         const instance = await env.INVESTIGATION_WORKFLOW.create({
@@ -170,10 +201,8 @@ export default {
         workflowInstanceId = instance.id;
       }
 
-      // Enqueue using sendBatch for efficiency (max 100 messages per sendBatch call)
       if (!dryRun) {
         for (const batch of batches) {
-          // Split into sub-batches of 100 for Cloudflare Queues limit
           for (let i = 0; i < batch.length; i += 100) {
             const sub = batch.slice(i, i + 100);
             await env.TASK_QUEUE.sendBatch(sub.map(msg => ({ body: msg })));
@@ -182,7 +211,7 @@ export default {
       }
 
       const requiredBatches = Math.ceil(logicalCount / TASKS_PER_BATCH);
-      const estimatedOps = logicalCount * 3; // write + read + delete per message
+      const estimatedOps = logicalCount * 3;
       const freeTierOpsPerDay = 10000;
 
       return Response.json({
@@ -200,7 +229,7 @@ export default {
           uniqueTasksCreated: created.length,
           estimatedQueueOps: estimatedOps,
           freeTierOpsRemainingEstimate: Math.max(0, freeTierOpsPerDay - estimatedOps),
-          note: "Conceptual batching. Actual execution respects CPU, subrequest, storage, and queue limits. ~3 ops per message. Workflow steps counted separately (free tier: 3,000/day).",
+          note: "Conceptual batching. Actual execution respects CPU, subrequest, storage, and queue limits. ~3 ops per message. Workflow steps counted separately (free tier: 3,000/day). Simulator outcomes are not evidence of real agent research.",
         },
         note: "No Cloudflare billing upgrade or deployment performed. Read-only by default. Humans retain publication/legal authority.",
       });
@@ -255,21 +284,18 @@ export default {
       const { taskId, requestId, type, query } = msg.body as any;
       const stub = env.TASK_LEDGER.getByName(requestId);
 
-      // Simulate agent execution (in real: call source agents, etc.)
-      // For free tier / starter: mark as UNKNOWN or mock PASS
-      const outcome = "UNKNOWN"; // Simulation is never evidence of a PASS
+      // Simulator path: outcomes are UNKNOWN by design.
+      // This is not evidence of real agent research or Grok communication.
+      const outcome = "UNKNOWN";
       await stub.updateOutcome(taskId, outcome as any, { 
         simulated: true, 
-        note: "Replace with real agent logic. Bounded batch execution.",
+        note: "Simulator outcome. Not evidence of real agent execution.",
         processedInBatch: true 
       });
 
       msg.ack();
       touched.add(requestId);
     }
-    // Signals are sent only when ALL ledger tasks have settled.
-    // At-least-once Queue delivery may duplicate a signal, so the
-    // Workflow always re-reads the ledger after receiving an event.
     for (const requestId of touched) {
       const stub = env.TASK_LEDGER.getByName(requestId);
       const stats = await stub.getProgressSummary(requestId);
@@ -282,8 +308,6 @@ export default {
           });
         } catch {
           // No Workflow requested, already finished, or transient failure.
-          // Do not retry settled task work to redeliver a hint; Workflow
-          // timeout reconciliation remains the recovery path.
         }
       }
     }
