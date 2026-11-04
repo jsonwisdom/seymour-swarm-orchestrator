@@ -1,5 +1,6 @@
 import type { RecoveryEnv } from "./recovery";
 import { listUnfinished } from "./recovery";
+import { DRIVE_POINTERS, DRIVE_SNAPSHOT_DATE } from "./drive-snapshot";
 
 export interface ProjectIndexEntry {
   id: string;
@@ -11,6 +12,7 @@ export interface ProjectIndexEntry {
   title: string;
   note: string;
   href?: string;
+  excerpt?: string;
 }
 
 export interface ProjectRecoveryIndex {
@@ -24,23 +26,15 @@ export interface ProjectRecoveryIndex {
   external: {
     pointers: ProjectIndexEntry[];
     count: number;
+    snapshotDate: string;
     note: string;
   };
   summary: {
     total: number;
     actionable: number;
-    staleExternal: number;
+    externalCount: number;
   };
 }
-
-/** Static external pointers discovered in Google Drive. Not synchronized. */
-const DRIVE_POINTERS: Array<{id:string;title:string;modified:string;href:string}> = [
-  {id:"1dTdg68kOHSKF5epPS7R9JEoMXzOn1cAYBwwX6etqmC4", title:"Seymour Supreme — Media, Women & Girls, Twelve Lanes of Justice — DESIGN_HOLD — 2026-10-20", modified:"2026-10-20T21:50:53Z", href:"https://docs.google.com/document/d/1dTdg68kOHSKF5epPS7R9JEoMXzOn1cAYBwwX6etqmC4"},
-  {id:"1gDG2jlGYH3DzM9Xx6HeKy8RmShLSznZOap7MTfUf2hc", title:"JASON_ON_BASE_FAMILY_GAME_WOLFRAM_SEYMOUR_REPLAY_V0_1 — Design HOLD", modified:"2026-10-12T02:09:17Z", href:"https://docs.google.com/document/d/1gDG2jlGYH3DzM9Xx6HeKy8RmShLSznZOap7MTfUf2hc"},
-  {id:"1SW0HMFtvsufxdR-c0xwqhiKizzTz8IXLmR9WUaIeoiA", title:"SeymourSupreme — Jason Role Promotion and Warrant Gate V0.1", modified:"2026-10-08T21:13:15Z", href:"https://docs.google.com/document/d/1SW0HMFtvsufxdR-c0xwqhiKizzTz8IXLmR9WUaIeoiA"},
-  {id:"100U0n7jJG0RYynStfnk3_RPphBGk5N81R-2MenldBTI", title:"SUPREME_SEYMOUR_CONSTITUTIONAL_RUNTIME_V1", modified:"2026-09-24T19:12:47Z", href:"https://docs.google.com/document/d/100U0n7jJG0RYynStfnk3_RPphBGk5N81R-2MenldBTI"},
-  {id:"1Ea6jfC0WiWJiFQhUKLHh1gbqbVBvHLn1wbDWnwOedz4", title:"SUPREME_SEYMOUR_CONSTITUTIONAL_SYSTEM_2026-09-23", modified:"2026-09-23T16:51:02Z", href:"https://docs.google.com/document/d/1Ea6jfC0WiWJiFQhUKLHh1gbqbVBvHLn1wbDWnwOedz4"}
-];
 
 export async function buildProjectIndex(env: RecoveryEnv): Promise<ProjectRecoveryIndex> {
   const now = new Date().toISOString();
@@ -60,13 +54,14 @@ export async function buildProjectIndex(env: RecoveryEnv): Promise<ProjectRecove
   const externalEntries: ProjectIndexEntry[] = DRIVE_POINTERS.map(p => ({
     id: p.id,
     source: "EXTERNAL_POINTER",
-    status: "EXTERNAL",
+    status: p.status,
     lastStep: "drive-document",
     updatedAt: Date.parse(p.modified),
     revision: null,
     title: p.title,
-    note: "Google Drive pointer — not synchronized into Worker",
-    href: p.href
+    note: "Google Drive snapshot — committed metadata, not live sync",
+    href: p.href,
+    excerpt: p.excerpt
   }));
 
   const actionable = workerEntries.filter(e =>
@@ -86,12 +81,13 @@ export async function buildProjectIndex(env: RecoveryEnv): Promise<ProjectRecove
     external: {
       pointers: externalEntries,
       count: externalEntries.length,
-      note: "External Drive documents are referenced only. They are not loaded into the Worker and do not prove runtime state."
+      snapshotDate: DRIVE_SNAPSHOT_DATE,
+      note: "External Drive documents are from a committed snapshot. They are not loaded live and do not prove runtime state. Re-sync by updating src/drive-snapshot.ts."
     },
     summary: {
       total: workerEntries.length + externalEntries.length,
       actionable,
-      staleExternal: externalEntries.length
+      externalCount: externalEntries.length
     }
   };
 }
