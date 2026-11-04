@@ -46,6 +46,18 @@ describe("Seymour Access authorization", () => {
     }
   });
 
+  it("live desk, assets and JSON status require operator allowlist", async () => {
+    for (const path of ["/recovery/live","/recovery/live/status","/recovery/live.js","/recovery/live.css"]) {
+      expect(hasRoutePermission(path,"operator@example.test",operator),path).toBe(true);
+      expect(hasRoutePermission(path,"attacker@example.test",operator),path).toBe(false);
+      const r=await SELF.fetch("https://example.com"+path,{headers:{
+        "Cf-Access-Authenticated-User-Email":"operator@example.test"
+      }});
+      expect(r.status,path).toBe(401);
+    }
+    expect(hasRoutePermission("/recovery/live-bypass","operator@example.test",operator)).toBe(false);
+  });
+
   it("forged Access headers do not grant private access", async () => {
     const response = await SELF.fetch("https://example.com/recovery/unfinished", {
       headers: {
