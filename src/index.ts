@@ -350,7 +350,7 @@ export default {
 
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil((async () => {
-      const result = await runAutomatedPersistenceProbe(env);
+      const result = await runAutomatedPersistenceProbe(env, Date.now(), "scheduled");
       console.log(JSON.stringify({
         event:"SEYMOUR_AUTOMATED_PERSISTENCE_V1",
         result:result.result,
