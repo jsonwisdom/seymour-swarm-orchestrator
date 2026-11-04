@@ -76,6 +76,22 @@ export class TaskLedger extends DurableObject {
     );
   }
 
+  async getProgressSummary(requestId: string): Promise<{total:number;pass:number;fail:number;unknown:number;pending:number}> {
+    const rows = this.ctx.storage.sql.exec(
+      "SELECT outcome, COUNT(*) AS count FROM tasks WHERE requestId = ? GROUP BY outcome", requestId
+    ).toArray();
+    const stats = { total: 0, pass: 0, fail: 0, unknown: 0, pending: 0 };
+    for (const row of rows) {
+      const n = Number(row.count);
+      stats.total += n;
+      if (row.outcome === "PASS") stats.pass += n;
+      else if (row.outcome === "FAIL") stats.fail += n;
+      else if (row.outcome === "UNKNOWN") stats.unknown += n;
+      else stats.pending += n;
+    }
+    return stats;
+  }
+
   async getTasksForRequest(requestId: string): Promise<Task[]> {
     const rows = this.ctx.storage.sql.exec(
       "SELECT * FROM tasks WHERE requestId = ?",
