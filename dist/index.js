@@ -612,7 +612,7 @@ function isAllowlisted(email, allowlist) {
 __name(isAllowlisted, "isAllowlisted");
 function hasRoutePermission(pathname, email, env) {
   if (!isAllowlisted(email, env.ACCESS_ALLOWLIST)) return false;
-  const recovery = pathname === "/recovery/save" || pathname === "/recovery/unfinished" || pathname === "/recovery/operator" || pathname === "/recovery/operator.js" || pathname === "/recovery/operator.css" || pathname.startsWith("/recovery/load/");
+  const recovery = pathname === "/recovery/save" || pathname === "/recovery/unfinished" || pathname === "/recovery/operator" || pathname === "/recovery/operator.js" || pathname === "/recovery/operator.css" || pathname === "/recovery/probe-now" || pathname.startsWith("/recovery/load/");
   if (recovery) return true;
   const orchestration = pathname === "/investigate" || pathname === "/control-desk" || pathname.startsWith("/graph/") || pathname.startsWith("/workflow/") || pathname.startsWith("/bus/");
   return orchestration && isAllowlisted(email, env.ACCESS_ORCHESTRATION_ALLOWLIST);
@@ -649,6 +649,13 @@ var index_default = {
           );
         }
       }
+    }
+    if ((request.method === "GET" || request.method === "POST") && url.pathname === "/recovery/probe-now") {
+      const result = await runAutomatedPersistenceProbe(env);
+      return Response.json(result, {
+        status: result.result === "PASS" ? 200 : 202,
+        headers: { "Cache-Control": "no-store" }
+      });
     }
     if (request.method === "GET" && url.pathname === "/recovery/operator") {
       return new Response(RECOVERY_OPERATOR_HTML, { headers: RECOVERY_OPERATOR_HEADERS });
@@ -838,7 +845,7 @@ var index_default = {
         }
       });
     }
-    return new Response("SEYMOUR SWARM ORCHESTRATOR v0.4\nPOST /control-desk {mission, scope?, roles?, dryRun?}\nPOST /bus/enqueue {from, to, payload}\nPOST /bus/direct {toBinding, payload}\nPOST /bus/state {key, value}\nPOST /recovery/save {missionId, status, lastStep, payload, timestamp, note}\nGET /recovery/load/{missionId}\nGET /recovery/unfinished\nPOST /investigate {question, logicalTaskCount?, dryRun?, useWorkflow?}\nGET /graph/{requestId}\nGET /workflow/{instanceId}\nGET /simulator/status", { status: 200 });
+    return new Response("SEYMOUR SWARM ORCHESTRATOR v0.4\nPOST /control-desk {mission, scope?, roles?, dryRun?}\nPOST /bus/enqueue {from, to, payload}\nPOST /bus/direct {toBinding, payload}\nPOST /bus/state {key, value}\nPOST /recovery/save {missionId, status, lastStep, payload, timestamp, note}\nGET /recovery/load/{missionId}\nGET /recovery/unfinished\nGET /recovery/probe-now\nPOST /investigate {question, logicalTaskCount?, dryRun?, useWorkflow?}\nGET /graph/{requestId}\nGET /workflow/{instanceId}\nGET /simulator/status", { status: 200 });
   },
   async scheduled(_controller, env, ctx) {
     ctx.waitUntil((async () => {
