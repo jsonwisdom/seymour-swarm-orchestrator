@@ -1,6 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./index";
 
+export type JsonData = string | number | boolean | null | JsonData[] | { [key: string]: JsonData };
+
 export interface Task {
   id: string;
   requestId: string;
@@ -10,7 +12,7 @@ export interface Task {
   dependencies: string[];
   costBudget: number;
   outcome: "PASS" | "FAIL" | "UNKNOWN" | "PENDING";
-  result?: unknown;
+  result?: JsonData;
   hash: string; // for dedup
   createdAt: number;
   updatedAt: number;
@@ -101,7 +103,7 @@ export class TaskLedger extends DurableObject {
     return rows.map(this.rowToTask);
   }
 
-  async getEvidenceGraph(requestId: string): Promise<{ tasks: Task[]; stats: any }> {
+  async getEvidenceGraph(requestId: string): Promise<{ tasks: Task[]; stats: { total: number; pass: number; fail: number; unknown: number; pending: number } }> {
     const tasks = await this.getTasksForRequest(requestId);
     const stats = {
       total: tasks.length,
