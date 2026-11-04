@@ -42,4 +42,23 @@ describe("MISSION_STATE recovery", () => {
   it("unknown mission resolves to null", async () => {
     expect(await loadCheckpoint(env, "missing-" + crypto.randomUUID())).toBeNull();
   });
+  it("public health confirms transport only, not factual verification", async () => {
+    const response = await SELF.fetch("https://example.com/health");
+    expect(response.status).toBe(200);
+    const data = await response.json() as {verified: string};
+    expect(data.verified).toBe("transport-only");
+  });
+  it("protects all work-creating routes without authentication", async () => {
+    for (const path of ["/investigate", "/control-desk", "/bus/enqueue", "/bus/direct", "/bus/state", "/recovery/save"]) {
+      const response = await SELF.fetch("https://example.com" + path, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({question:"test",mission:"test",dryRun:true})
+      });
+      expect(response.status, path).toBe(401);
+    }
+    for (const path of ["/graph/example", "/workflow/example", "/recovery/load/example", "/recovery/unfinished"]) {
+      const response = await SELF.fetch("https://example.com" + path);
+      expect(response.status, path).toBe(401);
+    }
+  });
 });
