@@ -1,4 +1,5 @@
 import type { RecoveryEnv } from "./recovery";
+import { WHEEL_OF_WISDOM, wheelCoverage } from "./wheel-of-wisdom";
 import { listUnfinished } from "./recovery";
 import { fetchLiveDrivePointers, type DriveLiveEnv } from "./drive-live";
 
@@ -31,6 +32,8 @@ export interface ProjectRecoveryIndex {
     note: string;
     error?: string;
   };
+  wheelOfWisdom: typeof WHEEL_OF_WISDOM;
+  math: ReturnType<typeof wheelCoverage>;
   summary: {
     total: number;
     actionable: number;
@@ -96,6 +99,8 @@ export async function buildProjectIndex(
         : "Fell back to committed snapshot. Set GOOGLE_SERVICE_ACCOUNT secret and share files with the service account to enable live sync.",
       ...(drive.error ? { error: drive.error } : {})
     },
+    wheelOfWisdom: WHEEL_OF_WISDOM,
+    math: wheelCoverage(workerEntries.length,externalEntries.length),
     summary: {
       total: workerEntries.length + externalEntries.length,
       actionable,
