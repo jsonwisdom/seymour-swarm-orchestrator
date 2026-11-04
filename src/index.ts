@@ -16,6 +16,8 @@ export interface Env {
   // Comma-separated emails allowed to perform privileged operations.
   // Example: "jason@example.com,operator@example.com"
   ACCESS_ALLOWLIST?: string;
+  // Separate grant for orchestration operations; no implicit promotion.
+  ACCESS_ORCHESTRATION_ALLOWLIST?: string;
 }
 
 const DEFAULT_LOGICAL_TASKS = 73000;
@@ -24,15 +26,30 @@ const AGENT_TYPES = ["source", "audit", "math", "legal", "replay", "receipt"] as
 
 function isAllowlisted(email: string | undefined, allowlist: string | undefined): boolean {
   if (!email || !allowlist) return false;
-  const allowed = allowlist.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
-  return allowed.includes(email.toLowerCase());
+  const normalized = email.trim().toLowerCase();
+  return allowlist.split(",").some(s => s.trim().toLowerCase() === normalized);
 }
 
-function hasRoutePermission(pathname: string, email: string | undefined, allowlist: string | undefined): boolean {
-  // Until a full role system exists, allowlisted operators may access all private routes.
-  // Non-allowlisted Access identities are denied.
-  if (!isAllowlisted(email, allowlist)) return false;
-  return true;
+// Recovery and orchestration are distinct permissions. Both must be explicitly
+// granted; a recovery operator is NOT automatically permitted to launch tasks.
+export function hasRoutePermission(
+  pathname: string,
+  email: string | undefined,
+  env: Pick<Env, "ACCESS_ALLOWLIST" | "ACCESS_ORCHESTRATION_ALLOWLIST">
+): boolean {
+  if (!isAllowlisted(email, env.ACCESS_ALLOWLIST)) return false;
+  const recovery =
+    pathname === "/recovery/save" ||
+    pathname === "/recovery/unfinished" ||
+    pathname.startsWith("/recovery/load/");
+  if (recovery) return true;
+  const orchestration =
+    pathname === "/investigate" ||
+    pathname === "/control-desk" ||
+    pathname.startsWith("/graph/") ||
+    pathname.startsWith("/workflow/") ||
+    pathname.startsWith("/bus/");
+  return orchestration && isAllowlisted(email, env.ACCESS_ORCHESTRATION_ALLOWLIST);
 }
 
 export default {
@@ -65,10 +82,19 @@ export default {
       // Authorization: Access identity must be on the explicit allowlist.
       // Bearer-token callers are treated as the configured operator (no separate identity).
       if (hasAccess && ctx.access) {
-        const email = ctx.access.userEmail;
-        if (!hasRoutePermission(url.pathname, email, env.ACCESS_ALLOWLIST)) {
+        // Verified by Cloudflare's runtime, never by a client-supplied header.
+        // Missing/unavailable identity fails closed, including service tokens
+        // that do not carry an allowed human email.
+        let email: string | undefined;
+        try {
+          const identity = await ctx.access.getIdentity();
+          email = identity?.email;
+        } catch {
+          return Response.json({error:"ACCESS_IDENTITY_UNAVAILABLE"}, {status:403});
+        }
+        if (!hasRoutePermission(url.pathname, email, env)) {
           return Response.json(
-            {error:"FORBIDDEN",note:"Identity not authorized for this operation."},
+            {error:"FORBIDDEN",note:"Identity lacks permission for this operation."},
             {status:403}
           );
         }
