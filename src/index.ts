@@ -1,3 +1,4 @@
+import { COMMS_DIRECTORY } from "./comms-directory";
 import { MissionState } from "./mission-state";
 import { TaskLedger, Task } from "./task-ledger";
 import { InvestigationWorkflow } from "./investigation-workflow";
@@ -28,6 +29,10 @@ export default {
       if (!env.CONTROL_DESK_TOKEN || request.headers.get("Authorization") !== "Bearer " + env.CONTROL_DESK_TOKEN) {
         return Response.json({error:"AUTH_REQUIRED", note:"Configure CONTROL_DESK_TOKEN before use."}, {status:401});
       }
+    }
+
+    if (url.pathname === "/comms/who" && request.method === "GET") {
+      return Response.json(COMMS_DIRECTORY);
     }
 
     if (url.pathname === "/control-desk" && request.method === "POST") {
