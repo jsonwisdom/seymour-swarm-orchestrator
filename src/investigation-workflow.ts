@@ -1,5 +1,6 @@
 import { WorkflowEntrypoint, WorkflowStep, WorkflowEvent } from "cloudflare:workers";
 import { TaskLedger } from "./task-ledger";
+import type { Env } from "./index";
 
 export interface InvestigationParams {
   requestId: string;
