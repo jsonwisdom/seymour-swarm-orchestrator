@@ -1,6 +1,7 @@
 import { COMMS_DIRECTORY } from "./comms-directory";
 import { readLiveRecoveryStatus, LIVE_DESK_HTML, LIVE_DESK_JS, LIVE_DESK_CSS, LIVE_HEADERS } from "./live-desk";
 import { runAutomatedPersistenceProbe } from "./auto-persistence";
+import { buildProjectIndex } from "./project-index";
 import { RECOVERY_OPERATOR_HTML, RECOVERY_OPERATOR_JS, RECOVERY_OPERATOR_CSS, RECOVERY_OPERATOR_HEADERS } from "./recovery-operator";
 import { MissionState } from "./mission-state";
 import { TaskLedger, Task } from "./task-ledger";
@@ -43,6 +44,7 @@ export function hasRoutePermission(
     pathname === "/recovery/operator.js" ||
     pathname === "/recovery/operator.css" ||
     pathname === "/recovery/probe-now" ||
+    pathname === "/recovery/index" ||
     pathname === "/recovery/live" ||
     pathname === "/recovery/live/status" ||
     pathname === "/recovery/live.js" ||
@@ -97,7 +99,11 @@ export default {
       }
     }
 
-    // Live status is protected by Access identity + recovery allowlist.
+    if (request.method === "GET" && url.pathname === "/recovery/index") {
+      const index = await buildProjectIndex(env);
+      return Response.json(index, {headers:{"Cache-Control":"no-store"}});
+    }
+
     if (request.method === "GET" && url.pathname === "/recovery/live") {
       return new Response(LIVE_DESK_HTML, {headers:LIVE_HEADERS});
     }
@@ -119,8 +125,6 @@ export default {
       }});
     }
 
-    // On-demand persistence probe. Same function as the scheduled handler.
-    // Requires Access + recovery allowlist. Does not accept unauthenticated calls.
     if ((request.method === "GET" || request.method === "POST") && url.pathname === "/recovery/probe-now") {
       const result = await runAutomatedPersistenceProbe(env);
       return Response.json(result, {
@@ -345,7 +349,7 @@ export default {
       });
     }
 
-    return new Response("SEYMOUR SWARM ORCHESTRATOR v0.4\nPOST /control-desk {mission, scope?, roles?, dryRun?}\nPOST /bus/enqueue {from, to, payload}\nPOST /bus/direct {toBinding, payload}\nPOST /bus/state {key, value}\nPOST /recovery/save {missionId, status, lastStep, payload, timestamp, note}\nGET /recovery/load/{missionId}\nGET /recovery/unfinished\nGET /recovery/probe-now\nPOST /investigate {question, logicalTaskCount?, dryRun?, useWorkflow?}\nGET /graph/{requestId}\nGET /workflow/{instanceId}\nGET /simulator/status", { status: 200 });
+    return new Response("SEYMOUR SWARM ORCHESTRATOR v0.4\nGET /recovery/index\nGET /recovery/live\nPOST /control-desk {mission, scope?, roles?, dryRun?}\nPOST /bus/enqueue {from, to, payload}\nPOST /bus/direct {toBinding, payload}\nPOST /bus/state {key, value}\nPOST /recovery/save {missionId, status, lastStep, payload, timestamp, note}\nGET /recovery/load/{missionId}\nGET /recovery/unfinished\nGET /recovery/probe-now\nPOST /investigate {question, logicalTaskCount?, dryRun?, useWorkflow?}\nGET /graph/{requestId}\nGET /workflow/{instanceId}\nGET /simulator/status", { status: 200 });
   },
 
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
