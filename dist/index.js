@@ -387,13 +387,16 @@ var TASKS_PER_BATCH = 270;
 var AGENT_TYPES = ["source", "audit", "math", "legal", "replay", "receipt"];
 function isAllowlisted(email, allowlist) {
   if (!email || !allowlist) return false;
-  const allowed = allowlist.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-  return allowed.includes(email.toLowerCase());
+  const normalized = email.trim().toLowerCase();
+  return allowlist.split(",").some((s) => s.trim().toLowerCase() === normalized);
 }
 __name(isAllowlisted, "isAllowlisted");
-function hasRoutePermission(pathname, email, allowlist) {
-  if (!isAllowlisted(email, allowlist)) return false;
-  return true;
+function hasRoutePermission(pathname, email, env) {
+  if (!isAllowlisted(email, env.ACCESS_ALLOWLIST)) return false;
+  const recovery = pathname === "/recovery/save" || pathname === "/recovery/unfinished" || pathname.startsWith("/recovery/load/");
+  if (recovery) return true;
+  const orchestration = pathname === "/investigate" || pathname === "/control-desk" || pathname.startsWith("/graph/") || pathname.startsWith("/workflow/") || pathname.startsWith("/bus/");
+  return orchestration && isAllowlisted(email, env.ACCESS_ORCHESTRATION_ALLOWLIST);
 }
 __name(hasRoutePermission, "hasRoutePermission");
 var index_default = {
@@ -413,10 +416,16 @@ var index_default = {
         );
       }
       if (hasAccess && ctx.access) {
-        const email = ctx.access.userEmail;
-        if (!hasRoutePermission(url.pathname, email, env.ACCESS_ALLOWLIST)) {
+        let email;
+        try {
+          const identity = await ctx.access.getIdentity();
+          email = identity?.email;
+        } catch {
+          return Response.json({ error: "ACCESS_IDENTITY_UNAVAILABLE" }, { status: 403 });
+        }
+        if (!hasRoutePermission(url.pathname, email, env)) {
           return Response.json(
-            { error: "FORBIDDEN", note: "Identity not authorized for this operation." },
+            { error: "FORBIDDEN", note: "Identity lacks permission for this operation." },
             { status: 403 }
           );
         }
@@ -633,6 +642,7 @@ export {
   InvestigationWorkflow,
   MissionState,
   TaskLedger,
-  index_default as default
+  index_default as default,
+  hasRoutePermission
 };
 //# sourceMappingURL=index.js.map
