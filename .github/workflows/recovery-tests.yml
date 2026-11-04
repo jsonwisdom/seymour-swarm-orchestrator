@@ -6,6 +6,7 @@ on:
       - 'test/**'
       - 'wrangler.jsonc'
       - 'package.json'
+      - 'package-lock.json'
       - 'vitest.config.ts'
       - '.github/workflows/recovery-tests.yml'
   pull_request:
@@ -21,5 +22,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install --no-audit --no-fund
+      - name: Use npm 11
+        run: npm install -g npm@11
+      - name: Deterministic install
+        run: npm ci --no-audit --no-fund
       - run: npm test
