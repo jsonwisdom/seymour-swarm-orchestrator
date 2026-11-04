@@ -1,4 +1,5 @@
 import { COMMS_DIRECTORY } from "./comms-directory";
+import { readLiveRecoveryStatus, LIVE_DESK_HTML, LIVE_DESK_JS, LIVE_DESK_CSS, LIVE_HEADERS } from "./live-desk";
 import { runAutomatedPersistenceProbe } from "./auto-persistence";
 import { RECOVERY_OPERATOR_HTML, RECOVERY_OPERATOR_JS, RECOVERY_OPERATOR_CSS, RECOVERY_OPERATOR_HEADERS } from "./recovery-operator";
 import { MissionState } from "./mission-state";
@@ -42,6 +43,10 @@ export function hasRoutePermission(
     pathname === "/recovery/operator.js" ||
     pathname === "/recovery/operator.css" ||
     pathname === "/recovery/probe-now" ||
+    pathname === "/recovery/live" ||
+    pathname === "/recovery/live/status" ||
+    pathname === "/recovery/live.js" ||
+    pathname === "/recovery/live.css" ||
     pathname.startsWith("/recovery/load/");
   if (recovery) return true;
   const orchestration =
@@ -90,6 +95,28 @@ export default {
           );
         }
       }
+    }
+
+    // Live status is protected by Access identity + recovery allowlist.
+    if (request.method === "GET" && url.pathname === "/recovery/live") {
+      return new Response(LIVE_DESK_HTML, {headers:LIVE_HEADERS});
+    }
+    if (request.method === "GET" && url.pathname === "/recovery/live.js") {
+      return new Response(LIVE_DESK_JS, {headers: {
+        "Content-Type":"text/javascript; charset=utf-8","Cache-Control":"no-store, private",
+        "X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer"
+      }});
+    }
+    if (request.method === "GET" && url.pathname === "/recovery/live.css") {
+      return new Response(LIVE_DESK_CSS, {headers: {
+        "Content-Type":"text/css; charset=utf-8","Cache-Control":"no-store, private",
+        "X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer"
+      }});
+    }
+    if (request.method === "GET" && url.pathname === "/recovery/live/status") {
+      return Response.json(await readLiveRecoveryStatus(env), {headers: {
+        "Cache-Control":"no-store, private"
+      }});
     }
 
     // On-demand persistence probe. Same function as the scheduled handler.
