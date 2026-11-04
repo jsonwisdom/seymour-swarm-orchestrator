@@ -46,3 +46,6 @@ jobs:
             git commit -m "build: generate npm 11 package-lock.json"
             git push origin HEAD:main
           fi
+
+      - name: Execute recovery tests after lockfile commit
+        run: npm test
