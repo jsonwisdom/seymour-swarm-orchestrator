@@ -384,10 +384,123 @@ var DRIVE_POINTERS = [
   }
 ];
 
+// src/drive-live.ts
+function b64url(input) {
+  const bytes = typeof input === "string" ? new TextEncoder().encode(input) : new Uint8Array(input);
+  let s = "";
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+__name(b64url, "b64url");
+async function importPrivateKey(pem) {
+  const body = pem.replace(/-----BEGIN PRIVATE KEY-----/g, "").replace(/-----END PRIVATE KEY-----/g, "").replace(/\s+/g, "");
+  const binary = Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
+  return crypto.subtle.importKey(
+    "pkcs8",
+    binary,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+}
+__name(importPrivateKey, "importPrivateKey");
+async function getAccessToken(sa) {
+  const iat = Math.floor(Date.now() / 1e3);
+  const exp = iat + 3600;
+  const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const payload = b64url(JSON.stringify({
+    iss: sa.client_email,
+    sub: sa.client_email,
+    aud: sa.token_uri || "https://oauth2.googleapis.com/token",
+    iat,
+    exp,
+    scope: "https://www.googleapis.com/auth/drive.readonly"
+  }));
+  const unsigned = `${header}.${payload}`;
+  const key = await importPrivateKey(sa.private_key);
+  const sig = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    key,
+    new TextEncoder().encode(unsigned)
+  );
+  const jwt = `${unsigned}.${b64url(sig)}`;
+  const res = await fetch(sa.token_uri || "https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: jwt
+    })
+  });
+  if (!res.ok) throw new Error(`TOKEN_EXCHANGE_FAILED:${res.status}`);
+  const data = await res.json();
+  if (!data.access_token) throw new Error("NO_ACCESS_TOKEN");
+  return data.access_token;
+}
+__name(getAccessToken, "getAccessToken");
+function inferStatus(name) {
+  const n = name.toUpperCase();
+  if (n.includes("DESIGN_HOLD") || n.includes("HOLD")) return "DESIGN_HOLD";
+  if (n.includes("AUDIT")) return "AUDIT_CHECKPOINT";
+  if (n.includes("PROTOCOL")) return "PROTOCOL";
+  if (n.includes("SPEC")) return "SPEC";
+  if (n.includes("REPLAY")) return "REPLAY";
+  if (n.includes("MANUAL")) return "MANUAL";
+  if (n.includes("CONSTITUTIONAL")) return "SYSTEM";
+  return "DRIVE";
+}
+__name(inferStatus, "inferStatus");
+async function fetchLiveDrivePointers(env) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  if (!env.GOOGLE_SERVICE_ACCOUNT) {
+    return {
+      source: "SNAPSHOT",
+      pointers: DRIVE_POINTERS,
+      fetchedAt: DRIVE_SNAPSHOT_DATE,
+      error: "GOOGLE_SERVICE_ACCOUNT_NOT_SET"
+    };
+  }
+  try {
+    const sa = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT);
+    if (!sa.client_email || !sa.private_key) throw new Error("INVALID_SERVICE_ACCOUNT");
+    const token = await getAccessToken(sa);
+    const q = encodeURIComponent("name contains 'Seymour' or name contains 'SEYMOUR'");
+    const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime,webViewLink)&pageSize=25&orderBy=modifiedTime desc`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error(`DRIVE_LIST_FAILED:${res.status}`);
+    const data = await res.json();
+    const files = data.files || [];
+    const pointers = files.map((f) => ({
+      id: f.id,
+      title: f.name,
+      modified: f.modifiedTime,
+      href: f.webViewLink || `https://docs.google.com/document/d/${f.id}`,
+      status: inferStatus(f.name),
+      excerpt: "Live Drive listing \u2014 excerpt not fetched"
+    }));
+    return {
+      source: "LIVE",
+      pointers,
+      fetchedAt: now
+    };
+  } catch (e) {
+    return {
+      source: "SNAPSHOT",
+      pointers: DRIVE_POINTERS,
+      fetchedAt: DRIVE_SNAPSHOT_DATE,
+      error: e instanceof Error ? e.message : "DRIVE_LIVE_FAILED"
+    };
+  }
+}
+__name(fetchLiveDrivePointers, "fetchLiveDrivePointers");
+
 // src/project-index.ts
 async function buildProjectIndex(env) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const unfinished = await listUnfinished(env);
+  const drive = await fetchLiveDrivePointers(env);
   const workerEntries = unfinished.map((m) => ({
     id: m.missionId,
     source: "MISSION_STATE",
@@ -398,7 +511,7 @@ async function buildProjectIndex(env) {
     title: m.missionId,
     note: "Durable Object checkpoint"
   }));
-  const externalEntries = DRIVE_POINTERS.map((p) => ({
+  const externalEntries = drive.pointers.map((p) => ({
     id: p.id,
     source: "EXTERNAL_POINTER",
     status: p.status,
@@ -406,7 +519,7 @@ async function buildProjectIndex(env) {
     updatedAt: Date.parse(p.modified),
     revision: null,
     title: p.title,
-    note: "Google Drive snapshot \u2014 committed metadata, not live sync",
+    note: drive.source === "LIVE" ? "Live Google Drive listing" : "Google Drive snapshot \u2014 live connector unavailable",
     href: p.href,
     excerpt: p.excerpt
   }));
@@ -424,13 +537,16 @@ async function buildProjectIndex(env) {
     external: {
       pointers: externalEntries,
       count: externalEntries.length,
-      snapshotDate: DRIVE_SNAPSHOT_DATE,
-      note: "External Drive documents are from a committed snapshot. They are not loaded live and do not prove runtime state. Re-sync by updating src/drive-snapshot.ts."
+      source: drive.source,
+      snapshotDate: drive.fetchedAt,
+      note: drive.source === "LIVE" ? "Live Drive API response." : "Fell back to committed snapshot. Set GOOGLE_SERVICE_ACCOUNT secret and share files with the service account to enable live sync.",
+      ...drive.error ? { error: drive.error } : {}
     },
     summary: {
       total: workerEntries.length + externalEntries.length,
       actionable,
-      externalCount: externalEntries.length
+      externalCount: externalEntries.length,
+      driveLive: drive.source === "LIVE"
     }
   };
 }
