@@ -1,7 +1,9 @@
 /**
- * Drive snapshot — 2026-11-04
+ * Drive snapshot — refreshed 2026-11-04T10:30:00Z
  * Committed metadata and short excerpts. Not a live Drive API connection.
- * Update by re-running the Drive sync and committing a new snapshot.
+ * Last refresh: Grok connector re-query. Result: no content delta.
+ * 13 documents, same IDs and modified times as prior snapshot.
+ * Live service-account path remains a separate upgrade.
  */
 export interface DrivePointer {
   id: string;
@@ -12,7 +14,9 @@ export interface DrivePointer {
   excerpt: string;
 }
 
-export const DRIVE_SNAPSHOT_DATE = "2026-11-04T09:07:00Z";
+export const DRIVE_SNAPSHOT_DATE = "2026-11-04T10:30:00Z";
+export const DRIVE_SNAPSHOT_DELTA = "NONE";
+export const DRIVE_SNAPSHOT_COUNT = 13;
 
 export const DRIVE_POINTERS: DrivePointer[] = [
   {
