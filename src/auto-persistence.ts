@@ -1,4 +1,7 @@
 import type { Env } from "./index";
+import type { MissionCheckpoint } from "./recovery";
+
+type StoredProbe = MissionCheckpoint & { revision: number };
 import { saveCheckpoint, loadCheckpoint } from "./recovery";
 
 export const AUTO_PROBE_ID = "seymour-scheduled-storage-proof-v1";
@@ -29,7 +32,7 @@ export async function runAutomatedPersistenceProbe(env: Env, now = Date.now()): 
     schema:"SEYMOUR_AUTOMATED_PERSISTENCE_V1",result:"FAIL",at,
     priorRunVerified:false,currentRoundtripVerified:false,revision:null,error:"MISSION_STATE_NOT_BOUND"
   };
-  const prior = await loadCheckpoint(env, HISTORY);
+  const prior = await loadCheckpoint(env, HISTORY) as StoredProbe | null;
   let priorRunVerified = false;
   let currentRoundtripVerified = false;
   let revision: number | null = null;
@@ -37,7 +40,7 @@ export async function runAutomatedPersistenceProbe(env: Env, now = Date.now()): 
     if (prior?.status === "DELIVERED" && typeof prior.payload === "object" &&
         prior.payload !== null) {
       const p = prior.payload as PreviousProbe;
-      const past = await loadCheckpoint(env, AUTO_PROBE_ID);
+      const past = await loadCheckpoint(env, AUTO_PROBE_ID) as StoredProbe | null;
       priorRunVerified = p.marker === MARKER && p.revision === past?.revision &&
         past?.payload !== null && typeof past?.payload === "object" &&
         (past.payload as PreviousProbe).runId === p.runId && p.runId.length >= 10;
@@ -48,8 +51,8 @@ export async function runAutomatedPersistenceProbe(env: Env, now = Date.now()): 
       missionId:AUTO_PROBE_ID,status:"STARTED",lastStep:"cron-started",
       payload:seed,timestamp:now,note:"Synthetic scheduled probe; no user content"
     });
-    if (!start.saved) throw Error("STARTED_SAVE_FAILED");
-    const startRead = await loadCheckpoint(env,AUTO_PROBE_ID);
+    if (!start.saved || !("revision" in start)) throw Error("STARTED_SAVE_FAILED");
+    const startRead = await loadCheckpoint(env,AUTO_PROBE_ID) as StoredProbe | null;
     if (startRead?.status !== "STARTED" || startRead.revision !== start.revision ||
         (startRead.payload as PreviousProbe)?.runId !== runId) throw Error("STARTED_READ_MISMATCH");
     const progress = await saveCheckpoint(env,{
@@ -57,8 +60,8 @@ export async function runAutomatedPersistenceProbe(env: Env, now = Date.now()): 
       payload:{...seed,revision:start.revision+1},timestamp:now,
       note:"Synthetic scheduled probe; verify next cron reads this value"
     });
-    if (!progress.saved || progress.revision !== start.revision+1) throw Error("REVISION_MISMATCH");
-    const finalRead = await loadCheckpoint(env,AUTO_PROBE_ID);
+    if (!progress.saved || !("revision" in progress) || progress.revision !== start.revision+1) throw Error("REVISION_MISMATCH");
+    const finalRead = await loadCheckpoint(env,AUTO_PROBE_ID) as StoredProbe | null;
     if (finalRead?.status !== "DELIVERED" || finalRead.revision !== progress.revision ||
         (finalRead.payload as PreviousProbe)?.runId !== runId) throw Error("FINAL_READ_MISMATCH");
     currentRoundtripVerified = true;
