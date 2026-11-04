@@ -24,11 +24,17 @@ const AGENT_TYPES = ["source", "audit", "math", "legal", "replay", "receipt"] as
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    // Recovery and shared state are private; an unset token disables them.
-    if (url.pathname.startsWith("/recovery/") || url.pathname === "/bus/state") {
-      if (!env.CONTROL_DESK_TOKEN || request.headers.get("Authorization") !== "Bearer " + env.CONTROL_DESK_TOKEN) {
-        return Response.json({error:"AUTH_REQUIRED", note:"Configure CONTROL_DESK_TOKEN before use."}, {status:401});
-      }
+    // Only two harmless discovery endpoints are public.
+    // All mission, evidence, queue and orchestration routes fail closed
+    // when auth is missing. Never put CONTROL_DESK_TOKEN in public HTML.
+    if (url.pathname === "/health" && request.method === "GET") {
+      return Response.json({service:"seymour-swarm-orchestrator",status:"UP",verified:"transport-only",version:"0.4"});
+    }
+    const isPublic = (url.pathname === "/comms/who" && request.method === "GET") ||
+      (url.pathname === "/simulator/status" && request.method === "GET");
+    if (!isPublic && (!env.CONTROL_DESK_TOKEN ||
+        request.headers.get("Authorization") !== "Bearer " + env.CONTROL_DESK_TOKEN)) {
+      return Response.json({error:"AUTH_REQUIRED",note:"Authenticated private gateway required."},{status:401});
     }
 
     if (url.pathname === "/comms/who" && request.method === "GET") {
