@@ -28,6 +28,24 @@ describe("Seymour Access authorization", () => {
     }
   });
 
+  it("operator console is scoped to recovery operators only", () => {
+    for (const path of ["/recovery/operator","/recovery/operator.js","/recovery/operator.css"]) {
+      expect(hasRoutePermission(path,"operator@example.test",operator),path).toBe(true);
+      expect(hasRoutePermission(path,"attacker@example.test",operator),path).toBe(false);
+      expect(hasRoutePermission(path,undefined,operator),path).toBe(false);
+    }
+    expect(hasRoutePermission("/recovery/operator-bypass","operator@example.test",full)).toBe(false);
+  });
+
+  it("operator console denies unauthenticated requests and forged identities", async () => {
+    for (const path of ["/recovery/operator","/recovery/operator.js","/recovery/operator.css"]) {
+      const response = await SELF.fetch("https://example.com" + path, {
+        headers: {"Cf-Access-Authenticated-User-Email":"operator@example.test"}
+      });
+      expect(response.status,path).toBe(401);
+    }
+  });
+
   it("forged Access headers do not grant private access", async () => {
     const response = await SELF.fetch("https://example.com/recovery/unfinished", {
       headers: {
