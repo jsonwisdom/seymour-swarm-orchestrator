@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import type { Env } from "./index";
 
 export interface Task {
   id: string;
