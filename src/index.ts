@@ -1,4 +1,5 @@
 import { COMMS_DIRECTORY } from "./comms-directory";
+import { runAutomatedPersistenceProbe } from "./auto-persistence";
 import { RECOVERY_OPERATOR_HTML, RECOVERY_OPERATOR_JS, RECOVERY_OPERATOR_CSS, RECOVERY_OPERATOR_HEADERS } from "./recovery-operator";
 import { MissionState } from "./mission-state";
 import { TaskLedger, Task } from "./task-ledger";
@@ -324,6 +325,24 @@ export default {
     }
 
     return new Response("SEYMOUR SWARM ORCHESTRATOR v0.4\nPOST /control-desk {mission, scope?, roles?, dryRun?}\nPOST /bus/enqueue {from, to, payload}\nPOST /bus/direct {toBinding, payload}\nPOST /bus/state {key, value}\nPOST /recovery/save {missionId, status, lastStep, payload, timestamp, note}\nGET /recovery/load/{missionId}\nGET /recovery/unfinished\nPOST /investigate {question, logicalTaskCount?, dryRun?, useWorkflow?}\nGET /graph/{requestId}\nGET /workflow/{instanceId}\nGET /simulator/status", { status: 200 });
+  },
+
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil((async () => {
+      const result = await runAutomatedPersistenceProbe(env);
+      console.log(JSON.stringify({
+        event:"SEYMOUR_AUTOMATED_PERSISTENCE_V1",
+        result:result.result,
+        priorRunVerified:result.priorRunVerified,
+        currentRoundtripVerified:result.currentRoundtripVerified,
+        revision:result.revision,
+        at:result.at,
+        error:result.error ?? null
+      }));
+      if (result.result !== "PASS" && result.error !== "PREVIOUS_RUN_NOT_VERIFIED") {
+        throw Error("SEYMOUR_AUTOMATED_PERSISTENCE_FAILED:" + result.error);
+      }
+    })());
   },
 
   async queue(batch: MessageBatch, env: Env): Promise<void> {
