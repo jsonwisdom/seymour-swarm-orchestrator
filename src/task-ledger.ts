@@ -1,7 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./index";
 
-export type JsonData = string | number | boolean | null | JsonData[] | { [key: string]: JsonData };
+// Bounded RPC-visible JSON result; avoid infinitely recursive TS RPC type expansion.
+export type JsonAtom = string | number | boolean | null;
+export type JsonData = JsonAtom | JsonAtom[] | { [key: string]: JsonAtom };
 
 export interface Task {
   id: string;
