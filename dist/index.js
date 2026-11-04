@@ -357,7 +357,7 @@ function wheelCoverage(workerCount, externalCount) {
 __name(wheelCoverage, "wheelCoverage");
 
 // src/drive-snapshot.ts
-var DRIVE_SNAPSHOT_DATE = "2026-11-04T09:07:00Z";
+var DRIVE_SNAPSHOT_DATE = "2026-11-04T10:30:00Z";
 var DRIVE_POINTERS = [
   {
     id: "1dTdg68kOHSKF5epPS7R9JEoMXzOn1cAYBwwX6etqmC4",
